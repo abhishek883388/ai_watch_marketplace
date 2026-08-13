@@ -43,5 +43,14 @@
         "status_or_date": "Identified",
         "impact_summary": "Twilio customers may be experiencing SMS delivery delays from a subset of Twilio Short Codes and Toll-Free Numbers to Verizon network subscribers in the United States.",
         "logged_at": "2026-08-13 05:27:31"
+    },
+    {
+        "category": "SRE Incident",
+        "title": "SMS Delivery Delays From a Subset of Twilio Short Codes and Toll-Free Numbers to Verizon United States",
+        "type": "Delays",
+        "product_impacted": "",
+        "status_or_date": "Monitoring",
+        "impact_summary": "We have observed a recovery in SMS delivery from a subset of Twilio Short Codes and Toll-Free Numbers to Verizon network subscribers in the United States and are monitoring service stability.",
+        "logged_at": "2026-08-13 07:13:04"
     }
 ]
