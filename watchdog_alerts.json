@@ -52,5 +52,14 @@
         "status_or_date": "Monitoring",
         "impact_summary": "We have observed a recovery in SMS delivery from a subset of Twilio Short Codes and Toll-Free Numbers to Verizon network subscribers in the United States and are monitoring service stability.",
         "logged_at": "2026-08-13 07:13:04"
+    },
+    {
+        "category": "Deprecation or Compliance",
+        "title": "",
+        "type": "",
+        "product_impacted": "",
+        "status_or_date": "",
+        "impact_summary": "",
+        "logged_at": "2026-08-13 11:39:49"
     }
 ]
