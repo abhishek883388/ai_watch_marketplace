@@ -11,13 +11,16 @@ from openai import OpenAI
 # ==========================================
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
-    api_key="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" 
+    api_key=os.environ.get("GROQ_API_KEY") # Pulls securely from GitHub Secrets
 )
 
 # Optional: Add your Slack Webhook URL. Leave empty string "" to skip Slack.
 SLACK_WEBHOOK_URL = "" 
 
-# Monitored services filter (Prevents alert fatigue)
+# YOUR MAKE.COM WEBHOOK URL HERE
+WEBHOOK_URL = "https://hook.us2.make.com/eac66h6lk9ccdllhewso4rlcluyd4xes"
+
+# Monitored services filter
 TARGET_SERVICES = [
     "programmable messaging",
     "programmable chat",
@@ -160,7 +163,6 @@ def save_alerts_to_file(alerts):
     """Saves all alerts to a local JSON file for Streamlit."""
     filename = "watchdog_alerts.json"
     
-    # Reload existing file to append
     try:
         with open(filename, 'r') as f:
             data = json.load(f)
@@ -175,33 +177,40 @@ def save_alerts_to_file(alerts):
     with open(filename, 'w') as f:
         json.dump(data, f, indent=4)
         
-    print(f"💾 Saved {len(alerts)} alert(s) to watchdog_alerts.json!")
+    print(f"💾 Saved {len(alerts)} alert(s) to local file!")
 
-def send_slack_alert(alerts):
-    """Sends combined alerts to Slack."""
-    if not SLACK_WEBHOOK_URL or not alerts:
+def send_to_looker_database(alerts):
+    """Pushes alerts to a Zapier/Make webhook to populate Google Sheets for Looker Studio."""
+    if not WEBHOOK_URL or "your_unique_webhook_id_here" in WEBHOOK_URL:
+        print("⚠️ Webhook URL not configured. Skipping Looker DB push.")
         return
-        
-    message = "🚨 *AI VENDOR WATCHDOG: TWILIO UPDATE*\n\n"
+
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     for alert in alerts:
-        emoji = "🔴" if alert.get('category') == "SRE Incident" else "⚠️"
-        message += f"{emoji} *[{alert.get('category', 'ALERT').upper()}]* {alert.get('title')}\n"
-        message += f"📦 *Product:* {alert.get('product_impacted')}\n"
-        message += f"📊 *Status/Date:* {alert.get('status_or_date')}\n"
-        message += f"📝 *Impact:* {alert.get('impact_summary')}\n\n"
+        payload = {
+            "Timestamp": timestamp,
+            "Category": alert.get('category', 'N/A'),
+            "Title": alert.get('title', 'N/A'),
+            "Product": alert.get('product_impacted', 'N/A'),
+            "Type": alert.get('type', 'N/A'),
+            "Status": alert.get('status_or_date', 'N/A'),
+            "Impact": alert.get('impact_summary', 'N/A')
+        }
         
-    payload = {"text": message}
-    req = urllib.request.Request(
-        SLACK_WEBHOOK_URL, 
-        data=json.dumps(payload).encode('utf-8'), 
-        headers={'Content-Type': 'application/json'}
-    )
-    try:
-        with urllib.request.urlopen(req) as resp:
-            if resp.status == 200:
-                print("✅ Successfully routed alerts to Slack!")
-    except Exception as e:
-        print(f"❌ Slack Error: {e}")
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(
+            WEBHOOK_URL, 
+            data=data, 
+            headers={'Content-Type': 'application/json'}
+        )
+        
+        try:
+            with urllib.request.urlopen(req) as response:
+                if response.status == 200:
+                    print(f"📊 Successfully pushed '{alert.get('title')}' to Webhook (Looker DB)!")
+        except Exception as e:
+            print(f"❌ Webhook Error: {e}")
 
 # ==========================================
 # 5. MAIN EXECUTION
@@ -228,14 +237,14 @@ def main():
         print("\n✅ All operational! No live incidents or upcoming deprecations found.")
     else:
         print(f"\n🚨 FOUND {len(all_alerts)} TOTAL ALERT(S):\n")
-        for alert in all_alerts:
-            print(f"[{alert.get('category')}] {alert.get('title')}")
-            print(f"📦 Product: {alert.get('product_impacted')}")
-            print(f"🗓️ Status/Date: {alert.get('status_or_date')}")
-            print(f"📝 Impact: {alert.get('impact_summary')}\n")
-            
+        
+        # Log to local file (for Streamlit UI)
         save_alerts_to_file(all_alerts)
-        send_slack_alert(all_alerts)
+        
+        # Send to Webhook (for Google Sheets / Looker Studio)
+        send_to_looker_database(all_alerts)
+        
+    print("\n✅ Script execution complete. Shutting down process.")
 
 if __name__ == "__main__":
     main()
