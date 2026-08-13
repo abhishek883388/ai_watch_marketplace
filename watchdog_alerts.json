@@ -25,5 +25,14 @@
         "status_or_date": null,
         "impact_summary": "Conversations (classic) now supports WhatsApp Card templates and WhatsApp Flow templates, previously only available via Programmable Messaging.",
         "logged_at": "2026-08-13 01:11:03"
+    },
+    {
+        "category": "Breaking Change, Compliance",
+        "title": "None (WhatsApp Card & Flows Support in Conversations (classic))",
+        "type": "Breaking Change, Compliance",
+        "product_impacted": "Conversations (classic)",
+        "status_or_date": "",
+        "impact_summary": "This change does not appear to be a breaking change or compliance update, only a feature addition",
+        "logged_at": "2026-08-13 03:23:01"
     }
 ]
