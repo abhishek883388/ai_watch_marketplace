@@ -154,8 +154,11 @@ def parse_ai_json(raw_json):
 # ==========================================
 # 4. STORAGE (JSON & CSV REPOSITORY DATABASE)
 # ==========================================
+# ==========================================
+# 4. STORAGE (JSON & CSV REPOSITORY DATABASE)
+# ==========================================
 def save_alerts_to_file(alerts):
-    """Appends new alerts to both JSON and CSV files."""
+    """Appends new alerts to JSON and always ensures CSV is updated."""
     json_filename = "watchdog_alerts.json"
     csv_filename = "watchdog_alerts.csv"
     
@@ -176,20 +179,19 @@ def save_alerts_to_file(alerts):
             data.append(alert)
             added_count += 1
         
-    # Save JSON database (for Streamlit UI)
+    # Save JSON database
     with open(json_filename, 'w') as f:
         json.dump(data, f, indent=4)
         
-    # 2. Save CSV database (for Google Sheets & Looker Studio)
-    if data:
-        keys = ["logged_at", "category", "title", "product_impacted", "type", "status_or_date", "impact_summary"]
-        with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
-            writer.writeheader()
+    # 2. ALWAYS generate/update CSV (even if empty or no new additions)
+    keys = ["logged_at", "category", "title", "product_impacted", "type", "status_or_date", "impact_summary"]
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
+        writer.writeheader()
+        if data:
             writer.writerows(data)
 
-    print(f"💾 Added {added_count} new alert(s) to watchdog_alerts.json and watchdog_alerts.csv!")
-
+    print(f"💾 Database updated! Added {added_count} new alert(s). JSON & CSV synced.")
 # ==========================================
 # 5. MAIN EXECUTION
 # ==========================================
