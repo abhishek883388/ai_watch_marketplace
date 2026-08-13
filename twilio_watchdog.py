@@ -6,6 +6,7 @@ import os
 import csv
 from datetime import datetime
 from openai import OpenAI
+from dotenv import load_dotenv  # <-- ADD THIS
 
 # ==========================================
 # 1. CONFIGURATION & CREDENTIALS
