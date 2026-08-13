@@ -154,9 +154,7 @@ def parse_ai_json(raw_json):
 # ==========================================
 # 4. STORAGE (JSON & CSV REPOSITORY DATABASE)
 # ==========================================
-# ==========================================
-# 4. STORAGE (JSON & CSV REPOSITORY DATABASE)
-# ==========================================
+
 def save_alerts_to_file(alerts):
     """Appends new alerts to JSON and always ensures CSV is updated."""
     json_filename = "watchdog_alerts.json"
@@ -174,6 +172,14 @@ def save_alerts_to_file(alerts):
     
     added_count = 0
     for alert in alerts:
+        # CLEANUP FIX: Intercept nulls/blanks BEFORE checking titles or saving
+        alert['product_impacted'] = alert.get('product_impacted') or 'Unspecified'
+        alert['title'] = alert.get('title') or 'N/A'
+        alert['status_or_date'] = alert.get('status_or_date') or 'N/A'
+        alert['impact_summary'] = alert.get('impact_summary') or 'N/A'
+        alert['type'] = alert.get('type') or 'N/A'
+        
+        # Deduplication check
         if alert.get('title') not in existing_titles:
             alert['logged_at'] = timestamp
             data.append(alert)
