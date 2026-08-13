@@ -154,7 +154,6 @@ def parse_ai_json(raw_json):
 # ==========================================
 # 4. STORAGE (JSON & CSV REPOSITORY DATABASE)
 # ==========================================
-
 def save_alerts_to_file(alerts):
     """Appends new alerts to JSON and always ensures CSV is updated."""
     json_filename = "watchdog_alerts.json"
@@ -198,6 +197,7 @@ def save_alerts_to_file(alerts):
             writer.writerows(data)
 
     print(f"💾 Database updated! Added {added_count} new alert(s). JSON & CSV synced.")
+
 # ==========================================
 # 5. MAIN EXECUTION
 # ==========================================
@@ -218,12 +218,14 @@ def main():
     arch_alerts = analyze_deprecations(changelog_text)
     all_alerts.extend(arch_alerts)
     
-    # 3. Store Results locally
+    # 3. Store Results locally (ALWAYS run this to generate CSV!)
+    save_alerts_to_file(all_alerts)
+    
+    # 4. Print Summary
     if not all_alerts:
         print("\n✅ All operational! No live incidents or upcoming deprecations found.")
     else:
-        print(f"\n🚨 FOUND {len(all_alerts)} MATCHING ITEM(S):\n")
-        save_alerts_to_file(all_alerts)
+        print(f"\n🚨 FOUND {len(all_alerts)} MATCHING ITEM(S):")
         
     print("\n✅ Script execution complete. Exiting clean.")
 
