@@ -11,16 +11,9 @@ from openai import OpenAI
 # ==========================================
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
-    api_key=os.environ.get("GROQ_API_KEY") # Pulls securely from GitHub Secrets
+    api_key=os.environ.get("GROQ_API_KEY")  # Pulls securely from GitHub Secrets
 )
 
-# Optional: Add your Slack Webhook URL. Leave empty string "" to skip Slack.
-SLACK_WEBHOOK_URL = "" 
-
-# YOUR MAKE.COM WEBHOOK URL HERE
-WEBHOOK_URL = "https://hook.us2.make.com/eac66h6lk9ccdllhewso4rlcluyd4xes"
-
-# Monitored services filter
 TARGET_SERVICES = [
     "programmable messaging",
     "programmable chat",
@@ -157,10 +150,10 @@ def parse_ai_json(raw_json):
     return []
 
 # ==========================================
-# 4. STORAGE & INTEGRATIONS
+# 4. LOCAL DATABASE STORAGE
 # ==========================================
 def save_alerts_to_file(alerts):
-    """Saves all alerts to a local JSON file for Streamlit."""
+    """Appends new alerts to watchdog_alerts.json."""
     filename = "watchdog_alerts.json"
     
     try:
@@ -170,47 +163,19 @@ def save_alerts_to_file(alerts):
         data = []
         
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    existing_titles = {item.get('title') for item in data if isinstance(item, dict)}
+    
+    added_count = 0
     for alert in alerts:
-        alert['logged_at'] = timestamp
-        data.append(alert)
+        if alert.get('title') not in existing_titles:
+            alert['logged_at'] = timestamp
+            data.append(alert)
+            added_count += 1
         
     with open(filename, 'w') as f:
         json.dump(data, f, indent=4)
         
-    print(f"💾 Saved {len(alerts)} alert(s) to local file!")
-
-def send_to_looker_database(alerts):
-    """Pushes alerts to a Zapier/Make webhook to populate Google Sheets for Looker Studio."""
-    if not WEBHOOK_URL or "your_unique_webhook_id_here" in WEBHOOK_URL:
-        print("⚠️ Webhook URL not configured. Skipping Looker DB push.")
-        return
-
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    for alert in alerts:
-        payload = {
-            "Timestamp": timestamp,
-            "Category": alert.get('category', 'N/A'),
-            "Title": alert.get('title', 'N/A'),
-            "Product": alert.get('product_impacted', 'N/A'),
-            "Type": alert.get('type', 'N/A'),
-            "Status": alert.get('status_or_date', 'N/A'),
-            "Impact": alert.get('impact_summary', 'N/A')
-        }
-        
-        data = json.dumps(payload).encode('utf-8')
-        req = urllib.request.Request(
-            WEBHOOK_URL, 
-            data=data, 
-            headers={'Content-Type': 'application/json'}
-        )
-        
-        try:
-            with urllib.request.urlopen(req) as response:
-                if response.status == 200:
-                    print(f"📊 Successfully pushed '{alert.get('title')}' to Webhook (Looker DB)!")
-        except Exception as e:
-            print(f"❌ Webhook Error: {e}")
+    print(f"💾 Added {added_count} new alert(s) to watchdog_alerts.json!")
 
 # ==========================================
 # 5. MAIN EXECUTION
@@ -222,29 +187,24 @@ def main():
     
     all_alerts = []
     
-    # 1. Check Live SRE Incidents
+    # 1. Fetch & Analyze Live SRE Incidents
     status_text = fetch_twilio_status()
     sre_alerts = analyze_status(status_text)
     all_alerts.extend(sre_alerts)
     
-    # 2. Check Architecture Deprecations
+    # 2. Fetch & Analyze Architecture Deprecations
     changelog_text = fetch_twilio_changelog()
     arch_alerts = analyze_deprecations(changelog_text)
     all_alerts.extend(arch_alerts)
     
-    # 3. Handle Results
+    # 3. Save to local JSON database
     if not all_alerts:
         print("\n✅ All operational! No live incidents or upcoming deprecations found.")
     else:
-        print(f"\n🚨 FOUND {len(all_alerts)} TOTAL ALERT(S):\n")
-        
-        # Log to local file (for Streamlit UI)
+        print(f"\n🚨 FOUND {len(all_alerts)} MATCHING ITEM(S):\n")
         save_alerts_to_file(all_alerts)
         
-        # Send to Webhook (for Google Sheets / Looker Studio)
-        send_to_looker_database(all_alerts)
-        
-    print("\n✅ Script execution complete. Shutting down process.")
+    print("\n✅ Script execution complete. Exiting clean.")
 
 if __name__ == "__main__":
     main()
