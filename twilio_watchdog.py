@@ -3,6 +3,7 @@ import urllib.request
 import json
 import ssl
 import os
+import csv
 from datetime import datetime
 from openai import OpenAI
 
@@ -11,9 +12,10 @@ from openai import OpenAI
 # ==========================================
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
-    api_key=os.environ.get("GROQ_API_KEY")  # Pulls securely from GitHub Secrets
+    api_key=os.environ.get("GROQ_API_KEY")  # Pulls securely from GitHub Secrets or local environment
 )
 
+# Services filter to target specific alerts and reduce noise
 TARGET_SERVICES = [
     "programmable messaging",
     "programmable chat",
@@ -71,7 +73,7 @@ def fetch_twilio_changelog():
     return entries_text
 
 # ==========================================
-# 3. AI ANALYZERS
+# 3. AI ANALYZERS (Groq / Llama 3)
 # ==========================================
 def analyze_status(status_text):
     """Parses SRE live incidents with Groq."""
@@ -150,16 +152,14 @@ def parse_ai_json(raw_json):
     return []
 
 # ==========================================
-# 4. LOCAL DATABASE STORAGE
+# 4. STORAGE (JSON & CSV REPOSITORY DATABASE)
 # ==========================================
-import csv
-
 def save_alerts_to_file(alerts):
-    """Saves and appends new alerts to both JSON and CSV files."""
+    """Appends new alerts to both JSON and CSV files."""
     json_filename = "watchdog_alerts.json"
     csv_filename = "watchdog_alerts.csv"
     
-    # 1. Load JSON data
+    # 1. Load existing JSON data
     try:
         with open(json_filename, 'r') as f:
             data = json.load(f)
@@ -176,20 +176,17 @@ def save_alerts_to_file(alerts):
             data.append(alert)
             added_count += 1
         
-    # Save JSON
+    # Save JSON database (for Streamlit UI)
     with open(json_filename, 'w') as f:
         json.dump(data, f, indent=4)
         
-    # 2. Save CSV for Google Sheets / Looker Studio
+    # 2. Save CSV database (for Google Sheets & Looker Studio)
     if data:
         keys = ["logged_at", "category", "title", "product_impacted", "type", "status_or_date", "impact_summary"]
         with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=keys)
+            writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
             writer.writeheader()
-            for row in data:
-                # Filter dictionary keys to match expected CSV header
-                clean_row = {k: row.get(k, 'N/A') for k in keys}
-                writer.csv_writer.writerow([clean_row[k] for k in keys])
+            writer.writerows(data)
 
     print(f"💾 Added {added_count} new alert(s) to watchdog_alerts.json and watchdog_alerts.csv!")
 
@@ -213,7 +210,7 @@ def main():
     arch_alerts = analyze_deprecations(changelog_text)
     all_alerts.extend(arch_alerts)
     
-    # 3. Save to local JSON database
+    # 3. Store Results locally
     if not all_alerts:
         print("\n✅ All operational! No live incidents or upcoming deprecations found.")
     else:
