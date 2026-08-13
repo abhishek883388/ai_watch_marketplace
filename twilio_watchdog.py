@@ -10,6 +10,9 @@ from openai import OpenAI
 # ==========================================
 # 1. CONFIGURATION & CREDENTIALS
 # ==========================================
+
+load_dotenv()  # <-- ADD THIS (Forces Python to read your .env file)
+
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
     api_key=os.environ.get("GROQ_API_KEY")  # Pulls securely from GitHub Secrets or local environment
