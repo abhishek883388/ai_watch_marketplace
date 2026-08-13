@@ -146,9 +146,10 @@ def parse_ai_json(raw_json):
 def save_alerts_to_file(alerts):
     """Appends new alerts to a CSV file, reading existing rows to prevent duplicates."""
     csv_filename = "watchdog_alerts.csv"
-    keys = ["logged_at", "category", "title", "product_impacted", "type", "status_or_date", "impact_summary"]
     
-    # 1. Read existing titles from CSV for deduplication
+    # NEW: Added the two Backbase fields to the CSV headers
+    keys = ["logged_at", "category", "title", "product_impacted", "type", "status_or_date", "impact_summary", "backbase_action_required", "backbase_rationale"]
+    
     existing_titles = set()
     file_exists = os.path.exists(csv_filename)
     if file_exists:
@@ -160,21 +161,22 @@ def save_alerts_to_file(alerts):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     new_alerts = []
     
-    # 2. Clean and filter new alerts
     for alert in alerts:
-        # CLEANUP FIX: Intercept nulls/blanks
         alert['product_impacted'] = alert.get('product_impacted') or 'Unspecified'
         alert['title'] = alert.get('title') or 'N/A'
         alert['status_or_date'] = alert.get('status_or_date') or 'N/A'
         alert['impact_summary'] = alert.get('impact_summary') or 'N/A'
         alert['type'] = alert.get('type') or 'N/A'
         
+        # NEW: Cleanup interceptors for the new fields
+        alert['backbase_action_required'] = alert.get('backbase_action_required') or 'Assessment Needed'
+        alert['backbase_rationale'] = alert.get('backbase_rationale') or 'AI could not determine rationale.'
+        
         if alert.get('title') not in existing_titles:
             alert['logged_at'] = timestamp
             new_alerts.append(alert)
-            existing_titles.add(alert.get('title')) # Add to set to prevent duplicates in current batch
+            existing_titles.add(alert.get('title')) 
             
-    # 3. Append to (or create) CSV
     with open(csv_filename, 'a', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
         if not file_exists:
@@ -183,7 +185,6 @@ def save_alerts_to_file(alerts):
             writer.writerows(new_alerts)
 
     print(f"💾 Database updated! Added {len(new_alerts)} new alert(s) to CSV.")
-
 # ==========================================
 # 5. MAIN EXECUTION
 # ==========================================
