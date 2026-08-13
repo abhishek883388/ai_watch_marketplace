@@ -1,0 +1,29 @@
+[
+    {
+        "category": "SRE Incident",
+        "title": "IP Retrieval Failing for EU Regional Customers",
+        "type": "Outage, Degraded Performance, or Delays",
+        "product_impacted": "Twilio Core",
+        "status_or_date": "Investigating",
+        "impact_summary": "We are continuing to investigate this issue.",
+        "logged_at": "2026-08-13 01:11:03"
+    },
+    {
+        "category": "Compliance Update",
+        "title": "Update to SendGrid Domain Authentication: Send to Coworker Action Removed",
+        "type": "Compliance, Deprecation, or Sunset API",
+        "product_impacted": "SendGrid",
+        "status_or_date": null,
+        "impact_summary": "The SendGrid Domain Authentication has been simplified by removing the Send to Coworker action, prioritizing more intentional and reliable methods to manage critical security records.",
+        "logged_at": "2026-08-13 01:11:03"
+    },
+    {
+        "category": "Breaking Change",
+        "title": "WhatsApp Card & Flows Support in Conversations (classic)",
+        "type": "Breaking Change or Sunset API",
+        "product_impacted": "Conversations (classic)",
+        "status_or_date": null,
+        "impact_summary": "Conversations (classic) now supports WhatsApp Card templates and WhatsApp Flow templates, previously only available via Programmable Messaging.",
+        "logged_at": "2026-08-13 01:11:03"
+    }
+]
