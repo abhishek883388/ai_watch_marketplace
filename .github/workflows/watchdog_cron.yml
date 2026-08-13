@@ -13,9 +13,15 @@ jobs:
     name: Run Twilio SRE & Arch Analysis
     runs-on: ubuntu-latest
     
+    # Explicitly grant write access to contents
+    permissions:
+      contents: write
+    
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
         
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -36,6 +42,5 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add watchdog_alerts.json
-          # The '|| exit 0' ensures the action stays green even if no new alerts were found
           git commit -m "Automated SRE database update [skip ci]" || exit 0
           git push
