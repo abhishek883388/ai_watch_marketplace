@@ -75,10 +75,26 @@ def fetch_twilio_changelog():
 # ==========================================
 def analyze_status(status_text):
     if not status_text: return []
-    print("🧠 [SRE AI] Analyzing active outages with Groq...")
+    print("🧠 [SRE AI] Analyzing active outages with Backbase context...")
     prompt = f"""
-    Read the Twilio Status entries. Identify active incidents, outages, or delays.
-    Output strictly as JSON: {{"alerts": [{{"category": "SRE Incident", "title": "incident title", "type": "Outage, Degraded Performance, or Delays", "product_impacted": "specific product name", "status_or_date": "Investigating, Identified, or Monitoring", "impact_summary": "1 sentence summary"}}]}}
+    You are a Site Reliability Engineer for Backbase (a digital banking platform). 
+    Read the Twilio Status entries. Identify active incidents.
+    Evaluate if this incident requires internal action, communication, or failover routing for Backbase.
+    Output strictly as JSON: 
+    {{
+      "alerts": [
+        {{
+          "category": "SRE Incident", 
+          "title": "incident title", 
+          "type": "Outage, Degraded Performance, or Delays", 
+          "product_impacted": "specific product name", 
+          "status_or_date": "Investigating, Identified, or Monitoring", 
+          "impact_summary": "1 sentence summary",
+          "backbase_action_required": "Immediate Action, Monitor, or No Action",
+          "backbase_rationale": "1 sentence explaining why Backbase does or does not need to act"
+        }}
+      ]
+    }}
     If no active issues exist, return {{"alerts": []}}. Entries:\n{status_text}
     """
     response = client.chat.completions.create(
@@ -88,10 +104,26 @@ def analyze_status(status_text):
 
 def analyze_deprecations(changelog_text):
     if not changelog_text: return []
-    print("🧠 [ARCH AI] Analyzing deprecations with Groq...")
+    print("🧠 [ARCH AI] Analyzing deprecations with Backbase context...")
     prompt = f"""
-    Read the Twilio changelog entries. Identify ONLY items that represent a deprecation, breaking change, sunset API, or compliance update.
-    Output strictly as JSON: {{"alerts": [{{"category": "Architecture Deprecation", "title": "title of change", "type": "Deprecation, Breaking Change, or Compliance", "product_impacted": "specific product name", "status_or_date": "sunset date or None Specified", "impact_summary": "1 sentence summary"}}]}}
+    You are a Software Architect for Backbase (a digital banking platform). 
+    Read the Twilio changelog entries. Identify ONLY items that represent a deprecation, breaking change, or compliance update.
+    Evaluate if Backbase needs to update their codebase or migrate APIs.
+    Output strictly as JSON: 
+    {{
+      "alerts": [
+        {{
+          "category": "Architecture Deprecation", 
+          "title": "title of change", 
+          "type": "Deprecation, Breaking Change, or Compliance", 
+          "product_impacted": "specific product name", 
+          "status_or_date": "sunset date or None Specified", 
+          "impact_summary": "1 sentence summary",
+          "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
+          "backbase_rationale": "1 sentence explaining why Backbase does or does not need to act"
+        }}
+      ]
+    }}
     If none exist, return {{"alerts": []}}. Entries:\n{changelog_text}
     """
     response = client.chat.completions.create(
