@@ -1,0 +1,4 @@
+logged_at,category,title,product_impacted,type,status_or_date,impact_summary
+2026-08-13 01:11:03,SRE Incident,IP Retrieval Failing for EU Regional Customers,Twilio Core,"Outage, Degraded Performance, or Delays",Investigating,We are continuing to investigate this issue.
+2026-08-13 01:11:03,Compliance Update,Update to SendGrid Domain Authentication: Send to Coworker Action Removed,SendGrid,"Compliance, Deprecation, or Sunset API",,"The SendGrid Domain Authentication has been simplified by removing the Send to Coworker action, prioritizing more intentional and reliable methods to manage critical security records."
+2026-08-13 01:11:03,Breaking Change,WhatsApp Card & Flows Support in Conversations (classic),Conversations (classic),Breaking Change or Sunset API,,"Conversations (classic) now supports WhatsApp Card templates and WhatsApp Flow templates, previously only available via Programmable Messaging."
