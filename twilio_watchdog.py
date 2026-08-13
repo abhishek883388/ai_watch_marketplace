@@ -152,12 +152,16 @@ def parse_ai_json(raw_json):
 # ==========================================
 # 4. LOCAL DATABASE STORAGE
 # ==========================================
+import csv
+
 def save_alerts_to_file(alerts):
-    """Appends new alerts to watchdog_alerts.json."""
-    filename = "watchdog_alerts.json"
+    """Saves and appends new alerts to both JSON and CSV files."""
+    json_filename = "watchdog_alerts.json"
+    csv_filename = "watchdog_alerts.csv"
     
+    # 1. Load JSON data
     try:
-        with open(filename, 'r') as f:
+        with open(json_filename, 'r') as f:
             data = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         data = []
@@ -172,10 +176,22 @@ def save_alerts_to_file(alerts):
             data.append(alert)
             added_count += 1
         
-    with open(filename, 'w') as f:
+    # Save JSON
+    with open(json_filename, 'w') as f:
         json.dump(data, f, indent=4)
         
-    print(f"💾 Added {added_count} new alert(s) to watchdog_alerts.json!")
+    # 2. Save CSV for Google Sheets / Looker Studio
+    if data:
+        keys = ["logged_at", "category", "title", "product_impacted", "type", "status_or_date", "impact_summary"]
+        with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=keys)
+            writer.writeheader()
+            for row in data:
+                # Filter dictionary keys to match expected CSV header
+                clean_row = {k: row.get(k, 'N/A') for k in keys}
+                writer.csv_writer.writerow([clean_row[k] for k in keys])
+
+    print(f"💾 Added {added_count} new alert(s) to watchdog_alerts.json and watchdog_alerts.csv!")
 
 # ==========================================
 # 5. MAIN EXECUTION
