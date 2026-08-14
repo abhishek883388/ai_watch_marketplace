@@ -35,47 +35,38 @@ TARGET_SERVICES = [
 # 2. DATA FETCHERS
 # ==========================================
 def fetch_jumio_status():
-    """[SRE] Fetches active incidents from the Jumio Status API."""
-    print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates...")
-    # Utilizing standard incident endpoints for Jumio
-    url = "https://status.jumio.com/api/v2/incidents.json"
-    context = ssl._create_unverified_context()
-    req = urllib.request.Request(url)
+    """[SRE] Fetches active and recent incidents from Jumio's official monitor RSS feed."""
+    print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates from monitor.jumio.com...")
+    feed_url = "https://monitor.jumio.com/history.rss"
+    feed = feedparser.parse(feed_url)
     
-    try:
-        with urllib.request.urlopen(req, context=context) as response:
-            data = json.loads(response.read().decode())
-    except Exception as e:
-        print(f"❌ Error fetching {VENDOR_NAME} status API: {e}")
-        return ""
-        
     entries_text = ""
-    for incident in data.get("incidents", []):
-        incident_name = incident.get('name', '')
-        components = incident.get('components', [])
-        affected_names = [c.get('name', '').lower() for c in components]
-        search_text = (incident_name.lower() + " " + " ".join(affected_names))
+    # Look through the most recent entries on the status history feed
+    for entry in feed.entries[:15]: 
+        search_text = (entry.title + " " + entry.get('summary', '')).lower()
         
-        if any(service in search_text for service in TARGET_SERVICES):
-            print(f"🎯 [{VENDOR_NAME} SRE Match]: {incident_name}")
-            entries_text += f"Title: {incident_name}\nStatus: {incident.get('status')}\n"
-            if incident.get("incident_updates"):
-                entries_text += f"Summary: {incident['incident_updates'][0].get('body')}\n\n"
+        # Match if it contains ID&V target services or broad identity verification terms
+        if any(service in search_text for service in TARGET_SERVICES) or "identity verification" in search_text:
+            print(f"🎯 [{VENDOR_NAME} SRE Match]: {entry.title}")
+            entries_text += f"Title: {entry.title}\nDate: {entry.get('published', 'N/A')}\nSummary: {entry.get('summary', 'N/A')}\n\n"
             
     return entries_text
 
 def fetch_jumio_changelog():
-    """[ARCH] Fetches deprecations/changelogs from the Jumio RSS feed."""
-    print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} changelogs...")
-    # Standard RSS feed for status histories/release notes
-    feed_url = "https://status.jumio.com/history.rss"
+    """[ARCH] Uses the monitor history feed to track SDK updates and deprecations."""
+    print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} changelogs & SDK deprecations...")
+    # Reuses the robust history feed to catch SDK version updates or maintenance notes
+    feed_url = "https://monitor.jumio.com/history.rss"
     feed = feedparser.parse(feed_url)
     
     entries_text = ""
     for entry in feed.entries[:20]: 
-        search_text = (entry.title + " " + entry.summary).lower()
-        if any(service in search_text for service in TARGET_SERVICES):
-            entries_text += f"Title: {entry.title}\nDate: {entry.published}\nSummary: {entry.summary}\n\n"
+        search_text = (entry.title + " " + entry.get('summary', '')).lower()
+        
+        # Filter specifically for architectural changes, SDK updates, or deprecations
+        if any(keyword in search_text for keyword in ["sdk", "deprecation", "breaking", "version", "sunset", "maintenance"]):
+            if any(service in search_text for service in TARGET_SERVICES) or "identity verification" in search_text:
+                entries_text += f"Title: {entry.title}\nDate: {entry.get('published', 'N/A')}\nSummary: {entry.get('summary', 'N/A')}\n\n"
             
     return entries_text
 
