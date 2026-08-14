@@ -147,7 +147,8 @@ def save_alerts_to_file(alerts):
     """Updates existing alerts in CSV if status/details change, or appends new ones."""
     csv_filename = "watchdog_alerts.csv"
     keys = [
-        "logged_at", 
+        "logged_at",
+        "vendor",
         "category", 
         "title", 
         "product_impacted", 
@@ -181,6 +182,7 @@ def save_alerts_to_file(alerts):
         title = alert.get('title') or 'N/A'
         clean_alert = {
             "logged_at": timestamp,
+            "vendor": "Twilio",
             "category": alert.get('category') or 'SRE Incident',
             "title": title,
             "product_impacted": alert.get('product_impacted') or 'Unspecified',
