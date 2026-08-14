@@ -30,7 +30,7 @@ TARGET_SERVICES = [
 def fetch_twilio_status():
     """[SRE] Fetches active incidents from the Twilio Status REST API."""
     print("📡 [SRE] Fetching live Twilio status updates...")
-    url = "https://status.twilio.com/api/v2/incidents/unresolved.json"
+    url = "https://status.twilio.com/api/v2/incidents.json"
     context = ssl._create_unverified_context()
     req = urllib.request.Request(url)
     
