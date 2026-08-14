@@ -34,13 +34,15 @@ jobs:
       - name: Execute Watchdog Script
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: python twilio_watchdog.py
+        run: |
+          python twilio_watchdog.py
+          python jumio_watchdog.py
 
       # --- COMMIT DATA BACK TO GITHUB DATABASE ---
       - name: Commit and Push Database Update
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add watchdog_alerts.json watchdog_alerts.csv
+          git add watchdog_alerts.csv
           git commit -m "Automated SRE database update [skip ci]" || exit 0
           git push
