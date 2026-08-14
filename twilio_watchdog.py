@@ -98,7 +98,7 @@ def analyze_status(status_text):
     If no active issues exist, return {{"alerts": []}}. Entries:\n{status_text}
     """
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"}
+        model="openai/gpt-oss-20b", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"}
     )
     return parse_ai_json(response.choices[0].message.content)
 
@@ -127,7 +127,7 @@ def analyze_deprecations(changelog_text):
     If none exist, return {{"alerts": []}}. Entries:\n{changelog_text}
     """
     response = client.chat.completions.create(
-        model="llama-3.1-8b-instant", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"}
+        model="openai/gpt-oss-20b", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"}
     )
     return parse_ai_json(response.choices[0].message.content)
 
