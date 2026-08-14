@@ -53,21 +53,30 @@ def fetch_jumio_status():
     return entries_text
 
 def fetch_jumio_changelog():
-    """[ARCH] Uses the monitor history feed to track SDK updates and deprecations."""
-    print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} changelogs & SDK deprecations...")
-    # Reuses the robust history feed to catch SDK version updates or maintenance notes
-    feed_url = "https://monitor.jumio.com/history.rss"
-    feed = feedparser.parse(feed_url)
+    """[ARCH] Fetches SDK updates, deprecations, and breaking changes from Jumio GitHub Releases."""
+    print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs from GitHub...")
+    
+    # GitHub automatically generates Atom RSS feeds for repository releases
+    github_feeds = [
+        "https://github.com/Jumio/mobile-sdk-android/releases.atom",
+        "https://github.com/Jumio/mobile-sdk-ios/releases.atom"
+    ]
     
     entries_text = ""
-    for entry in feed.entries[:20]: 
-        search_text = (entry.title + " " + entry.get('summary', '')).lower()
+    for feed_url in github_feeds:
+        feed = feedparser.parse(feed_url)
         
-        # Filter specifically for architectural changes, SDK updates, or deprecations
-        if any(keyword in search_text for keyword in ["sdk", "deprecation", "breaking", "version", "sunset", "maintenance"]):
-            if any(service in search_text for service in TARGET_SERVICES) or "identity verification" in search_text:
-                entries_text += f"Title: {entry.title}\nDate: {entry.get('published', 'N/A')}\nSummary: {entry.get('summary', 'N/A')}\n\n"
+        # Grab the 5 most recent SDK releases per platform
+        for entry in feed.entries[:5]: 
+            # GitHub release entries contain the changelog in the 'content' or 'summary'
+            content = entry.get('content', [{'value': ''}])[0].get('value', '')
+            summary = entry.get('summary', '')
+            search_text = (entry.title + " " + summary + " " + content).lower()
             
+            # Filter specifically for architectural changes, deprecations, or breaking changes
+            if any(keyword in search_text for keyword in ["sdk", "deprecation", "breaking", "removed", "sunset", "vulnerability"]):
+                entries_text += f"Title: {entry.title}\nDate: {entry.get('published', 'N/A')}\nSummary: {summary}\n\n"
+                
     return entries_text
 
 # ==========================================
