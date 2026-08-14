@@ -139,52 +139,83 @@ def parse_ai_json(raw_json):
     except Exception as e:
         print(f"❌ JSON parse error: {e}")
     return []
-
+    
 # ==========================================
-# 4. STORAGE (CSV ONLY)
+# 4. STORAGE (CSV UPDATE & APPEND ENGINE)
 # ==========================================
 def save_alerts_to_file(alerts):
-    """Appends new alerts to a CSV file, reading existing rows to prevent duplicates."""
+    """Updates existing alerts in CSV if status/details change, or appends new ones."""
     csv_filename = "watchdog_alerts.csv"
+    keys = [
+        "logged_at", 
+        "category", 
+        "title", 
+        "product_impacted", 
+        "type", 
+        "status_or_date", 
+        "impact_summary", 
+        "backbase_action_required", 
+        "backbase_rationale"
+    ]
     
-    # NEW: Added the two Backbase fields to the CSV headers
-    keys = ["logged_at", "category", "title", "product_impacted", "type", "status_or_date", "impact_summary", "backbase_action_required", "backbase_rationale"]
+    # 1. Load existing records into a dictionary keyed by alert 'title'
+    existing_records = {}
+    record_order = []  # Preserves historical CSV row order
     
-    existing_titles = set()
-    file_exists = os.path.exists(csv_filename)
-    if file_exists:
+    if os.path.exists(csv_filename):
         with open(csv_filename, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                existing_titles.add(row.get('title'))
+                title = row.get('title')
+                if title:
+                    existing_records[title] = row
+                    record_order.append(title)
                 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    new_alerts = []
+    updated_count = 0
+    added_count = 0
     
+    # 2. Process incoming alerts
     for alert in alerts:
-        alert['product_impacted'] = alert.get('product_impacted') or 'Unspecified'
-        alert['title'] = alert.get('title') or 'N/A'
-        alert['status_or_date'] = alert.get('status_or_date') or 'N/A'
-        alert['impact_summary'] = alert.get('impact_summary') or 'N/A'
-        alert['type'] = alert.get('type') or 'N/A'
+        # DATA SANITATION: Fallbacks for missing/null values
+        title = alert.get('title') or 'N/A'
+        clean_alert = {
+            "logged_at": timestamp,
+            "category": alert.get('category') or 'SRE Incident',
+            "title": title,
+            "product_impacted": alert.get('product_impacted') or 'Unspecified',
+            "type": alert.get('type') or 'N/A',
+            "status_or_date": alert.get('status_or_date') or 'N/A',
+            "impact_summary": alert.get('impact_summary') or 'N/A',
+            "backbase_action_required": alert.get('backbase_action_required') or 'Assessment Needed',
+            "backbase_rationale": alert.get('backbase_rationale') or 'AI could not determine rationale.'
+        }
         
-        # NEW: Cleanup interceptors for the new fields
-        alert['backbase_action_required'] = alert.get('backbase_action_required') or 'Assessment Needed'
-        alert['backbase_rationale'] = alert.get('backbase_rationale') or 'AI could not determine rationale.'
-        
-        if alert.get('title') not in existing_titles:
-            alert['logged_at'] = timestamp
-            new_alerts.append(alert)
-            existing_titles.add(alert.get('title')) 
+        if title in existing_records:
+            # Check if relevant status or impact fields changed
+            prev_status = existing_records[title].get('status_or_date')
+            new_status = clean_alert['status_or_date']
             
-    with open(csv_filename, 'a', newline='', encoding='utf-8') as f:
-        writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
-        if not file_exists:
-            writer.writeheader()
-        if new_alerts:
-            writer.writerows(new_alerts)
+            if prev_status != new_status:
+                # Retain original logged_at timestamp, update status and analysis
+                clean_alert['logged_at'] = existing_records[title].get('logged_at', timestamp)
+                existing_records[title] = clean_alert
+                updated_count += 1
+        else:
+            # New incident discovered: add to records and order tracking
+            existing_records[title] = clean_alert
+            record_order.append(title)
+            added_count += 1
 
-    print(f"💾 Database updated! Added {len(new_alerts)} new alert(s) to CSV.")
+    # 3. Overwrite CSV with updated master list
+    with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
+        writer.writeheader()
+        for title in record_order:
+            writer.writerow(existing_records[title])
+
+    print(f"💾 Database synced! Added {added_count} new alert(s), updated {updated_count} existing record(s).")
+    
 # ==========================================
 # 5. MAIN EXECUTION
 # ==========================================
