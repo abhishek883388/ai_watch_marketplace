@@ -49,18 +49,18 @@ def fetch_jumio_status():
             entries_text += f"EXACT_TITLE: {title_clean}\nDate: {entry.get('published', 'N/A')}\nSummary: {entry.get('summary', 'N/A')}\n\n"
             
     return entries_text
-
+    
 def fetch_jumio_changelog():
     """[ARCH] Fetches SDK updates and deprecations from Jumio GitHub Releases."""
     print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs from GitHub...")
     
     github_feeds = [
-        "https://github.com/Jumio/mobile-sdk-android/releases.atom",
-        "https://github.com/Jumio/mobile-sdk-ios/releases.atom"
+        ("Android SDK", "https://github.com/Jumio/mobile-sdk-android/releases.atom"),
+        ("iOS SDK", "https://github.com/Jumio/mobile-sdk-ios/releases.atom")
     ]
     
     entries_text = ""
-    for feed_url in github_feeds:
+    for platform, feed_url in github_feeds:
         feed = feedparser.parse(feed_url)
         
         for entry in feed.entries[:5]: 
@@ -69,7 +69,10 @@ def fetch_jumio_changelog():
             search_text = (entry.title + " " + summary + " " + content).lower()
             
             if any(keyword in search_text for keyword in ["sdk", "deprecation", "breaking", "removed", "sunset", "vulnerability"]):
-                title_clean = entry.title.strip()
+                # Clean version tag and prefix platform name
+                raw_version = entry.title.replace('v', '').strip()
+                title_clean = f"Jumio {platform} v{raw_version}"
+                
                 entries_text += f"EXACT_TITLE: {title_clean}\nDate: {entry.get('published', 'N/A')}\nSummary: {summary}\n\n"
                 
     return entries_text
