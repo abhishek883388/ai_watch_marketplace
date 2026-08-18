@@ -17,7 +17,6 @@ client = OpenAI(
 
 VENDOR_NAME = "Jumio"
 
-# Filtering strictly for Jumio ID&V (Identity Verification) components
 TARGET_SERVICES = [
     "identity verification",
     "id&v",
@@ -35,28 +34,26 @@ TARGET_SERVICES = [
 # 2. DATA FETCHERS
 # ==========================================
 def fetch_jumio_status():
-    """[SRE] Fetches active and recent incidents from Jumio's official monitor RSS feed."""
-    print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates from monitor.jumio.com...")
+    """[SRE] Fetches active incidents from Jumio's official monitor feed."""
+    print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates...")
     feed_url = "https://monitor.jumio.com/history.rss"
     feed = feedparser.parse(feed_url)
     
     entries_text = ""
-    # Look through the most recent entries on the status history feed
     for entry in feed.entries[:15]: 
         search_text = (entry.title + " " + entry.get('summary', '')).lower()
         
-        # Match if it contains ID&V target services or broad identity verification terms
         if any(service in search_text for service in TARGET_SERVICES) or "identity verification" in search_text:
-            print(f"🎯 [{VENDOR_NAME} SRE Match]: {entry.title}")
-            entries_text += f"Title: {entry.title}\nDate: {entry.get('published', 'N/A')}\nSummary: {entry.get('summary', 'N/A')}\n\n"
+            title_clean = entry.title.strip()
+            print(f"🎯 [{VENDOR_NAME} SRE Match]: {title_clean}")
+            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {entry.get('published', 'N/A')}\nSummary: {entry.get('summary', 'N/A')}\n\n"
             
     return entries_text
 
 def fetch_jumio_changelog():
-    """[ARCH] Fetches SDK updates, deprecations, and breaking changes from Jumio GitHub Releases."""
+    """[ARCH] Fetches SDK updates and deprecations from Jumio GitHub Releases."""
     print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs from GitHub...")
     
-    # GitHub automatically generates Atom RSS feeds for repository releases
     github_feeds = [
         "https://github.com/Jumio/mobile-sdk-android/releases.atom",
         "https://github.com/Jumio/mobile-sdk-ios/releases.atom"
@@ -66,42 +63,41 @@ def fetch_jumio_changelog():
     for feed_url in github_feeds:
         feed = feedparser.parse(feed_url)
         
-        # Grab the 5 most recent SDK releases per platform
         for entry in feed.entries[:5]: 
-            # GitHub release entries contain the changelog in the 'content' or 'summary'
             content = entry.get('content', [{'value': ''}])[0].get('value', '')
             summary = entry.get('summary', '')
             search_text = (entry.title + " " + summary + " " + content).lower()
             
-            # Filter specifically for architectural changes, deprecations, or breaking changes
             if any(keyword in search_text for keyword in ["sdk", "deprecation", "breaking", "removed", "sunset", "vulnerability"]):
-                entries_text += f"Title: {entry.title}\nDate: {entry.get('published', 'N/A')}\nSummary: {summary}\n\n"
+                title_clean = entry.title.strip()
+                entries_text += f"EXACT_TITLE: {title_clean}\nDate: {entry.get('published', 'N/A')}\nSummary: {summary}\n\n"
                 
     return entries_text
 
 # ==========================================
-# 3. AI ANALYZERS (Groq / Llama 3)
+# 3. AI ANALYZERS (Groq / GPT-OSS-20B)
 # ==========================================
 def analyze_status(status_text):
     """Parses SRE live incidents with Backbase ID&V Context."""
     if not status_text: return []
-    print(f"🧠 [SRE AI] Analyzing {VENDOR_NAME} active outages with Backbase context...")
+    print(f"🧠 [SRE AI] Analyzing active {VENDOR_NAME} outages...")
     prompt = f"""
     You are a Site Reliability Engineer for Backbase (a digital banking platform). 
     Read the {VENDOR_NAME} Status entries regarding Identity Verification (ID&V). Identify active incidents.
-    Evaluate if this incident requires internal action, communication, or failover routing for Backbase onboarding flows.
+    CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter capitalization, wording, or spelling.
+
     Output strictly as JSON: 
     {{
       "alerts": [
         {{
           "category": "SRE Incident", 
-          "title": "incident title", 
+          "title": "EXACT title string from input", 
           "type": "Outage, Degraded Performance, or Delays", 
           "product_impacted": "specific product name", 
           "status_or_date": "Investigating, Identified, Monitoring, or Resolved", 
           "impact_summary": "1 sentence summary",
           "backbase_action_required": "Immediate Action, Monitor, or No Action",
-          "backbase_rationale": "1 sentence explaining why Backbase does or does not need to act regarding customer onboarding."
+          "backbase_rationale": "1 sentence explaining why Backbase does or does not need to act regarding onboarding."
         }}
       ]
     }}
@@ -115,17 +111,18 @@ def analyze_status(status_text):
 def analyze_deprecations(changelog_text):
     """Parses breaking changes and SDK deprecations with Backbase Context."""
     if not changelog_text: return []
-    print(f"🧠 [ARCH AI] Analyzing {VENDOR_NAME} deprecations with Backbase context...")
+    print(f"🧠 [ARCH AI] Analyzing {VENDOR_NAME} deprecations...")
     prompt = f"""
     You are a Software Architect for Backbase (a digital banking platform). 
     Read the {VENDOR_NAME} changelog entries for ID&V. Identify ONLY items that represent a deprecation, breaking change, SDK sunset, or compliance update.
-    Evaluate if Backbase needs to update their Mobile SDKs (iOS/Android) or API integrations.
+    CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter wording.
+
     Output strictly as JSON: 
     {{
       "alerts": [
         {{
           "category": "Architecture Deprecation", 
-          "title": "title of change", 
+          "title": "EXACT title string from input", 
           "type": "Deprecation, Breaking Change, or Compliance", 
           "product_impacted": "specific product name", 
           "status_or_date": "sunset date or None Specified", 
@@ -153,13 +150,11 @@ def parse_ai_json(raw_json):
     return []
 
 # ==========================================
-# 4. STORAGE (CSV UPDATE & APPEND ENGINE)
+# 4. STORAGE (CSV WITH AUTO-RESOLUTION)
 # ==========================================
 def save_alerts_to_file(alerts):
-    """Updates existing alerts in CSV if status/details change, or appends new ones."""
+    """Updates existing alerts, auto-resolves vanished SRE incidents, or appends new ones."""
     csv_filename = "watchdog_alerts.csv"
-    
-    # NEW SCHEMA: Note the addition of the "vendor" column
     keys = [
         "logged_at", 
         "vendor",
@@ -186,14 +181,16 @@ def save_alerts_to_file(alerts):
                     record_order.append(title)
                 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    updated_count = 0
-    added_count = 0
+    incoming_titles = set()
     
+    # 1. Process active incoming alerts
     for alert in alerts:
-        title = alert.get('title') or 'N/A'
+        title = (alert.get('title') or 'N/A').strip()
+        incoming_titles.add(title)
+        
         clean_alert = {
             "logged_at": timestamp,
-            "vendor": VENDOR_NAME,  # Injects "Jumio" into the database
+            "vendor": VENDOR_NAME,
             "category": alert.get('category') or 'SRE Incident',
             "title": title,
             "product_impacted": alert.get('product_impacted') or 'Unspecified',
@@ -205,25 +202,28 @@ def save_alerts_to_file(alerts):
         }
         
         if title in existing_records:
-            prev_status = existing_records[title].get('status_or_date')
-            new_status = clean_alert['status_or_date']
-            
-            if prev_status != new_status:
-                clean_alert['logged_at'] = existing_records[title].get('logged_at', timestamp)
-                existing_records[title] = clean_alert
-                updated_count += 1
+            clean_alert['logged_at'] = existing_records[title].get('logged_at', timestamp)
+            existing_records[title] = clean_alert
         else:
             existing_records[title] = clean_alert
             record_order.append(title)
-            added_count += 1
 
+    # 2. AUTO-RESOLVE: Check for Jumio SRE incidents that disappeared from active feed
+    auto_resolved_count = 0
+    for title, row in existing_records.items():
+        if row.get('vendor') == VENDOR_NAME and row.get('category') == 'SRE Incident':
+            if title not in incoming_titles and row.get('status_or_date', '').lower() not in ['resolved', 'completed']:
+                row['status_or_date'] = 'Resolved'
+                auto_resolved_count += 1
+
+    # 3. Write updated database back to CSV
     with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
         writer.writeheader()
         for title in record_order:
             writer.writerow(existing_records[title])
 
-    print(f"💾 Database synced! Added {added_count} new alert(s), updated {updated_count} existing record(s).")
+    print(f"💾 Database synced! ({auto_resolved_count} {VENDOR_NAME} incident(s) auto-marked as 'Resolved')")
 
 # ==========================================
 # 5. MAIN EXECUTION
@@ -238,12 +238,6 @@ def main():
     all_alerts.extend(analyze_deprecations(fetch_jumio_changelog()))
     
     save_alerts_to_file(all_alerts)
-    
-    if not all_alerts:
-        print("\n✅ All operational! No live incidents or upcoming deprecations found.")
-    else:
-        print(f"\n🚨 FOUND {len(all_alerts)} MATCHING ITEM(S):")
-        
     print("\n✅ Script execution complete. Exiting clean.")
 
 if __name__ == "__main__":
