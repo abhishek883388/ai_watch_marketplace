@@ -80,36 +80,53 @@ def fetch_jumio_changelog():
 # ==========================================
 # 3. AI ANALYZERS (Groq / GPT-OSS-20B)
 # ==========================================
+
 def analyze_status(status_text):
     """Parses SRE live incidents with Backbase ID&V Context."""
-    if not status_text: return []
+    if not status_text: 
+        return []
+        
     print(f"🧠 [SRE AI] Analyzing active {VENDOR_NAME} outages...")
-    prompt = f"""
-    You are a Site Reliability Engineer for Backbase (a digital banking platform). 
-    Read the {VENDOR_NAME} Status entries regarding Identity Verification (ID&V). Identify active incidents.
-    CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter capitalization, wording, or spelling.
+    
+    prompt = f"""You are a Site Reliability Engineer for Backbase (digital banking platform).
+Analyze the following Jumio incident entries for Identity Verification (ID&V).
 
-    Output strictly as JSON: 
+Rules:
+1. Extract active incidents.
+2. For the "title" field, you MUST copy the EXACT string from "EXACT_TITLE:" without changing spelling or casing.
+3. Respond ONLY with a valid JSON object matching this structure:
+
+{{
+  "alerts": [
     {{
-      "alerts": [
-        {{
-          "category": "SRE Incident", 
-          "title": "EXACT title string from input", 
-          "type": "Outage, Degraded Performance, or Delays", 
-          "product_impacted": "specific product name", 
-          "status_or_date": "Investigating, Identified, Monitoring, or Resolved", 
-          "impact_summary": "1 sentence summary",
-          "backbase_action_required": "Immediate Action, Monitor, or No Action",
-          "backbase_rationale": "1 sentence explaining why Backbase does or does not need to act regarding onboarding."
-        }}
-      ]
+      "category": "SRE Incident",
+      "title": "EXACT title string from input",
+      "type": "Outage, Degraded Performance, or Delays",
+      "product_impacted": "Identity Verification",
+      "status_or_date": "Investigating",
+      "impact_summary": "One sentence summary of outage.",
+      "backbase_action_required": "Monitor",
+      "backbase_rationale": "One sentence explaining impact on customer onboarding."
     }}
-    If no active issues exist, return {{"alerts": []}}. Entries:\n{status_text}
-    """
-    response = client.chat.completions.create(
-        model="openai/gpt-oss-20b", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"}
-    )
-    return parse_ai_json(response.choices[0].message.content)
+  ]
+}}
+
+If no active issues exist, return: {{"alerts": []}}
+
+Entries to analyze:
+{status_text}"""
+
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0.1  # Low temperature prevents JSON generation hallucinations
+        )
+        return parse_ai_json(response.choices[0].message.content)
+    except Exception as e:
+        print(f"⚠️ [SRE AI Error] Failed to generate JSON from Groq: {e}")
+        return []
 
 def analyze_deprecations(changelog_text):
     """Parses breaking changes and SDK deprecations with Backbase Context."""
