@@ -1,7 +1,6 @@
 import feedparser
 import urllib.request
 import json
-import ssl
 import os
 import csv
 from datetime import datetime
@@ -10,9 +9,13 @@ from openai import OpenAI
 # ==========================================
 # 1. CONFIGURATION & CREDENTIALS
 # ==========================================
+groq_api_key = os.environ.get("GROQ_API_KEY")
+if not groq_api_key:
+    raise ValueError("GROQ_API_KEY environment variable is required but not set. Please set it before running this script.")
+
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
-    api_key=os.environ.get("GROQ_API_KEY") 
+    api_key=groq_api_key
 )
 
 VENDOR_NAME = "Jumio"
@@ -38,43 +41,46 @@ def fetch_jumio_status():
     print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates...")
     feed_url = "https://monitor.jumio.com/history.rss"
     feed = feedparser.parse(feed_url)
-    
+
     entries_text = ""
-    for entry in feed.entries[:15]: 
+    for entry in feed.entries[:15]:
         search_text = (entry.title + " " + entry.get('summary', '')).lower()
-        
+
         if any(service in search_text for service in TARGET_SERVICES) or "identity verification" in search_text:
-            title_clean = entry.title.strip()
-            print(f"🎯 [{VENDOR_NAME} SRE Match]: {title_clean}")
-            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {entry.get('published', 'N/A')}\nSummary: {entry.get('summary', 'N/A')}\n\n"
-            
+            title_clean = entry.title.strip().replace('"', '\\"').replace('\\', '\\\\')
+            summary_clean = entry.get('summary', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
+            date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
+            print(f"🎯 [{VENDOR_NAME} SRE Match]: {entry.title.strip()}")
+            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+
     return entries_text
     
 def fetch_jumio_changelog():
     """[ARCH] Fetches SDK updates and deprecations from Jumio GitHub Releases."""
     print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs from GitHub...")
-    
+
     github_feeds = [
         ("Android SDK", "https://github.com/Jumio/mobile-sdk-android/releases.atom"),
         ("iOS SDK", "https://github.com/Jumio/mobile-sdk-ios/releases.atom")
     ]
-    
+
     entries_text = ""
     for platform, feed_url in github_feeds:
         feed = feedparser.parse(feed_url)
-        
-        for entry in feed.entries[:5]: 
+
+        for entry in feed.entries[:5]:
             content = entry.get('content', [{'value': ''}])[0].get('value', '')
             summary = entry.get('summary', '')
             search_text = (entry.title + " " + summary + " " + content).lower()
-            
+
             if any(keyword in search_text for keyword in ["sdk", "deprecation", "breaking", "removed", "sunset", "vulnerability"]):
-                # Clean version tag and prefix platform name
                 raw_version = entry.title.replace('v', '').strip()
-                title_clean = f"Jumio {platform} v{raw_version}"
-                
-                entries_text += f"EXACT_TITLE: {title_clean}\nDate: {entry.get('published', 'N/A')}\nSummary: {summary}\n\n"
-                
+                title_clean = f"Jumio {platform} v{raw_version}".replace('"', '\\"').replace('\\', '\\\\')
+                summary_clean = summary.replace('"', '\\"').replace('\\', '\\\\')
+                date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
+
+                entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+
     return entries_text
 
 # ==========================================
@@ -121,11 +127,13 @@ Entries to analyze:
             model="openai/gpt-oss-20b",
             messages=[{"role": "user", "content": prompt}],
             response_format={"type": "json_object"},
-            temperature=0.1  # Low temperature prevents JSON generation hallucinations
+            temperature=0.1
         )
         return parse_ai_json(response.choices[0].message.content)
+    except RuntimeError as e:
+        raise
     except Exception as e:
-        print(f"⚠️ [SRE AI Error] Failed to generate JSON from Groq: {e}")
+        print(f"⚠️ [SRE AI Error] Failed to analyze incidents (check GROQ_API_KEY and network)")
         return []
 
 def analyze_deprecations(changelog_text):
@@ -133,19 +141,19 @@ def analyze_deprecations(changelog_text):
     if not changelog_text: return []
     print(f"🧠 [ARCH AI] Analyzing {VENDOR_NAME} deprecations...")
     prompt = f"""
-    You are a Software Architect for Backbase (a digital banking platform). 
+    You are a Software Architect for Backbase (a digital banking platform).
     Read the {VENDOR_NAME} changelog entries for ID&V. Identify ONLY items that represent a deprecation, breaking change, SDK sunset, or compliance update.
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter wording.
 
-    Output strictly as JSON: 
+    Output strictly as JSON:
     {{
       "alerts": [
         {{
-          "category": "Architecture Deprecation", 
-          "title": "EXACT title string from input", 
-          "type": "Deprecation, Breaking Change, or Compliance", 
-          "product_impacted": "specific product name", 
-          "status_or_date": "sunset date or None Specified", 
+          "category": "Architecture Deprecation",
+          "title": "EXACT title string from input",
+          "type": "Deprecation, Breaking Change, or Compliance",
+          "product_impacted": "specific product name",
+          "status_or_date": "sunset date or None Specified",
           "impact_summary": "1 sentence summary",
           "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
           "backbase_rationale": "1 sentence explaining why Backbase does or does not need to act on the SDK or API."
@@ -154,20 +162,34 @@ def analyze_deprecations(changelog_text):
     }}
     If none exist, return {{"alerts": []}}. Entries:\n{changelog_text}
     """
-    response = client.chat.completions.create(
-        model="openai/gpt-oss-20b", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"}
-    )
-    return parse_ai_json(response.choices[0].message.content)
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        return parse_ai_json(response.choices[0].message.content)
+    except RuntimeError as e:
+        raise
+    except Exception as e:
+        print(f"⚠️ [ARCH AI Error] Failed to analyze deprecations (check GROQ_API_KEY and network)")
+        return []
 
 def parse_ai_json(raw_json):
     """Safely extracts the alerts array from LLM JSON response."""
     try:
         data = json.loads(raw_json)
-        if isinstance(data, dict): return data.get('alerts') or data.get('items') or []
-        elif isinstance(data, list): return data
-    except Exception as e:
-        print(f"❌ JSON parse error: {e}")
-    return []
+        if isinstance(data, dict):
+            alerts = data.get('alerts') or data.get('items') or []
+            if not isinstance(alerts, list):
+                raise ValueError(f"Expected 'alerts' to be a list, got {type(alerts).__name__}")
+            return alerts
+        elif isinstance(data, list):
+            return data
+        else:
+            raise ValueError(f"Expected JSON object or array, got {type(data).__name__}")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise RuntimeError(f"Failed to parse LLM response: {e}\nRaw content: {raw_json[:200]}")
 
 # ==========================================
 # 4. STORAGE (CSV WITH AUTO-RESOLUTION)
@@ -242,6 +264,8 @@ def save_alerts_to_file(alerts):
         writer.writeheader()
         for title in record_order:
             writer.writerow(existing_records[title])
+
+    os.chmod(csv_filename, 0o600)
 
     print(f"💾 Database synced! ({auto_resolved_count} {VENDOR_NAME} incident(s) auto-marked as 'Resolved')")
 

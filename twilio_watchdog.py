@@ -1,7 +1,6 @@
 import feedparser
 import urllib.request
 import json
-import ssl
 import os
 import csv
 from datetime import datetime
@@ -10,9 +9,13 @@ from openai import OpenAI
 # ==========================================
 # 1. CONFIGURATION & CREDENTIALS
 # ==========================================
+groq_api_key = os.environ.get("GROQ_API_KEY")
+if not groq_api_key:
+    raise ValueError("GROQ_API_KEY environment variable is required but not set. Please set it before running this script.")
+
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
-    api_key=os.environ.get("GROQ_API_KEY") 
+    api_key=groq_api_key
 )
 
 VENDOR_NAME = "Twilio"
@@ -33,11 +36,10 @@ def fetch_twilio_status():
     """[SRE] Fetches active incidents from the Twilio Status REST API."""
     print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates...")
     url = "https://status.twilio.com/api/v2/incidents/unresolved.json"
-    context = ssl._create_unverified_context()
     req = urllib.request.Request(url)
-    
+
     try:
-        with urllib.request.urlopen(req, context=context) as response:
+        with urllib.request.urlopen(req) as response:
             data = json.loads(response.read().decode())
     except Exception as e:
         print(f"❌ Error fetching status API: {e}")
@@ -49,14 +51,16 @@ def fetch_twilio_status():
         components = incident.get('components', [])
         affected_names = [c.get('name', '').lower() for c in components]
         search_text = (incident_name.lower() + " " + " ".join(affected_names))
-        
+
         if any(service in search_text for service in TARGET_SERVICES):
             print(f"🎯 [SRE Match]: {incident_name}")
-            # Explicitly label EXACT TITLE so LLM does not alter it
-            entries_text += f"EXACT_TITLE: {incident_name}\nStatus: {incident.get('status')}\n"
+            name_clean = incident_name.replace('"', '\\"').replace('\\', '\\\\')
+            status_clean = str(incident.get('status', '')).replace('"', '\\"').replace('\\', '\\\\')
+            entries_text += f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
             if incident.get("incident_updates"):
-                entries_text += f"Summary: {incident['incident_updates'][0].get('body')}\n\n"
-            
+                body_clean = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
+                entries_text += f"Summary: {body_clean}\n\n"
+
     return entries_text
 
 def fetch_twilio_changelog():
@@ -64,13 +68,16 @@ def fetch_twilio_changelog():
     print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} changelogs...")
     feed_url = "https://www.twilio.com/changelog/feed"
     feed = feedparser.parse(feed_url)
-    
+
     entries_text = ""
-    for entry in feed.entries[:20]: 
+    for entry in feed.entries[:20]:
         search_text = (entry.title + " " + entry.summary).lower()
         if any(service in search_text for service in TARGET_SERVICES):
-            entries_text += f"EXACT_TITLE: {entry.title}\nDate: {entry.published}\nSummary: {entry.summary}\n\n"
-            
+            title_clean = entry.title.replace('"', '\\"').replace('\\', '\\\\')
+            date_clean = entry.published.replace('"', '\\"').replace('\\', '\\\\')
+            summary_clean = entry.summary.replace('"', '\\"').replace('\\', '\\\\')
+            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+
     return entries_text
 
 # ==========================================
@@ -81,19 +88,19 @@ def analyze_status(status_text):
     if not status_text: return []
     print(f"🧠 [SRE AI] Analyzing active {VENDOR_NAME} outages...")
     prompt = f"""
-    You are a Site Reliability Engineer for Backbase. 
+    You are a Site Reliability Engineer for Backbase.
     Read the Twilio Status entries. Identify active incidents.
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter capitalization, wording, or spelling.
-    
-    Output strictly as JSON: 
+
+    Output strictly as JSON:
     {{
       "alerts": [
         {{
-          "category": "SRE Incident", 
-          "title": "EXACT title string from input", 
-          "type": "Outage, Degraded Performance, or Delays", 
-          "product_impacted": "specific product name", 
-          "status_or_date": "Investigating, Identified, or Monitoring", 
+          "category": "SRE Incident",
+          "title": "EXACT title string from input",
+          "type": "Outage, Degraded Performance, or Delays",
+          "product_impacted": "specific product name",
+          "status_or_date": "Investigating, Identified, or Monitoring",
           "impact_summary": "1 sentence summary",
           "backbase_action_required": "Immediate Action, Monitor, or No Action",
           "backbase_rationale": "1 sentence justification"
@@ -102,29 +109,37 @@ def analyze_status(status_text):
     }}
     If no active issues exist, return {{"alerts": []}}. Entries:\n{status_text}
     """
-    response = client.chat.completions.create(
-        model="openai/gpt-oss-20b", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"}
-    )
-    return parse_ai_json(response.choices[0].message.content)
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        return parse_ai_json(response.choices[0].message.content)
+    except RuntimeError as e:
+        raise
+    except Exception as e:
+        print(f"⚠️ [SRE AI Error] Failed to analyze incidents (check GROQ_API_KEY and network)")
+        return []
 
 def analyze_deprecations(changelog_text):
     """Parses breaking changes and deprecations with Backbase Context."""
     if not changelog_text: return []
     print(f"🧠 [ARCH AI] Analyzing {VENDOR_NAME} deprecations...")
     prompt = f"""
-    You are a Software Architect for Backbase. 
+    You are a Software Architect for Backbase.
     Read the Twilio changelog entries. Identify ONLY items that represent a deprecation, breaking change, or compliance update.
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter wording.
-    
-    Output strictly as JSON: 
+
+    Output strictly as JSON:
     {{
       "alerts": [
         {{
-          "category": "Architecture Deprecation", 
-          "title": "EXACT title string from input", 
-          "type": "Deprecation, Breaking Change, or Compliance", 
-          "product_impacted": "specific product name", 
-          "status_or_date": "sunset date or None Specified", 
+          "category": "Architecture Deprecation",
+          "title": "EXACT title string from input",
+          "type": "Deprecation, Breaking Change, or Compliance",
+          "product_impacted": "specific product name",
+          "status_or_date": "sunset date or None Specified",
           "impact_summary": "1 sentence summary",
           "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
           "backbase_rationale": "1 sentence justification"
@@ -133,20 +148,34 @@ def analyze_deprecations(changelog_text):
     }}
     If none exist, return {{"alerts": []}}. Entries:\n{changelog_text}
     """
-    response = client.chat.completions.create(
-        model="openai/gpt-oss-20b", messages=[{"role": "user", "content": prompt}], response_format={"type": "json_object"}
-    )
-    return parse_ai_json(response.choices[0].message.content)
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"}
+        )
+        return parse_ai_json(response.choices[0].message.content)
+    except RuntimeError as e:
+        raise
+    except Exception as e:
+        print(f"⚠️ [ARCH AI Error] Failed to analyze deprecations (check GROQ_API_KEY and network)")
+        return []
 
 def parse_ai_json(raw_json):
     """Safely extracts the alerts array from LLM JSON response."""
     try:
         data = json.loads(raw_json)
-        if isinstance(data, dict): return data.get('alerts') or data.get('items') or []
-        elif isinstance(data, list): return data
-    except Exception as e:
-        print(f"❌ JSON parse error: {e}")
-    return []
+        if isinstance(data, dict):
+            alerts = data.get('alerts') or data.get('items') or []
+            if not isinstance(alerts, list):
+                raise ValueError(f"Expected 'alerts' to be a list, got {type(alerts).__name__}")
+            return alerts
+        elif isinstance(data, list):
+            return data
+        else:
+            raise ValueError(f"Expected JSON object or array, got {type(data).__name__}")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise RuntimeError(f"Failed to parse LLM response: {e}\nRaw content: {raw_json[:200]}")
 
 # ==========================================
 # 4. STORAGE (CSV WITH AUTO-RESOLUTION)
@@ -223,6 +252,8 @@ def save_alerts_to_file(alerts):
         writer.writeheader()
         for title in record_order:
             writer.writerow(existing_records[title])
+
+    os.chmod(csv_filename, 0o600)
 
     print(f"💾 Database synced! ({auto_resolved_count} incident(s) auto-marked as 'Resolved')")
 
