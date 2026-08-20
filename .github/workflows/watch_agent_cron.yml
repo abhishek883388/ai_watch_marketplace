@@ -10,7 +10,7 @@ on:
 
 jobs:
   run-watchdog:
-    name: Run Twilio SRE & Arch Analysis
+    name: Run AI Watch Agent SRE & Arch Analysis
     runs-on: ubuntu-latest
     
     # Explicitly grant write access to contents
@@ -35,9 +35,9 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
-          python twilio_watchdog.py
-          python jumio_watchdog.py
-          python entrust_watchdog.py
+          python twilio_watch_agent.py
+          python jumio_watch_agent.py
+          python entrust_watch_agent.py
 
       # --- COMMIT DATA BACK TO GITHUB DATABASE ---
       - name: Commit and Push Database Update
