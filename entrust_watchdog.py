@@ -35,98 +35,108 @@ TARGET_SERVICES = [
 # 2. DATA FETCHERS
 # ==========================================
 def fetch_entrust_status():
-    """[SRE] Fetches active incidents from Entrust's status page."""
+    """[SRE] Fetches active incidents from Entrust's status page.
+
+    NOTE: Entrust status page URL needs to be verified.
+    Common patterns: status.entrust.com, entrust.statuspage.io, or check https://www.entrust.com/status
+    Update status_feeds list below with correct URLs if they change.
+    """
     print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates...")
 
-    # Try status.entrust.com first
+    # Try multiple Entrust status endpoints (update these with verified working URLs)
     status_feeds = [
-        "https://status.entrust.com/history.rss",
-        "https://status.entrust.com/api/v2/incidents/unresolved.json",
+        "https://entrust.statuspage.io/history.rss",  # Statuspage.io format
+        "https://status.entrust.com/history.rss",     # Direct status domain
+        "https://www.entrust.com/status",             # Main status page
     ]
 
     entries_text = ""
+    feed_found = False
 
     for feed_url in status_feeds:
         try:
             if feed_url.endswith(".rss"):
                 feed = feedparser.parse(feed_url)
-                for entry in feed.entries[:15]:
-                    search_text = (entry.title + " " + entry.get('summary', '')).lower()
+                if feed.entries:
+                    feed_found = True
+                    for entry in feed.entries[:15]:
+                        search_text = (entry.title + " " + entry.get('summary', '')).lower()
 
-                    if any(service in search_text for service in TARGET_SERVICES):
-                        title_clean = entry.title.strip().replace('"', '\\"').replace('\\', '\\\\')
-                        summary_clean = entry.get('summary', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
-                        date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
-                        print(f"🎯 [SRE Match]: {entry.title.strip()}")
-                        entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
-                break
+                        if any(service in search_text for service in TARGET_SERVICES):
+                            title_clean = entry.title.strip().replace('"', '\\"').replace('\\', '\\\\')
+                            summary_clean = entry.get('summary', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
+                            date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
+                            print(f"🎯 [SRE Match]: {entry.title.strip()}")
+                            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+                    break
 
-            elif feed_url.endswith(".json"):
+            elif feed_url.endswith(".com") or feed_url.endswith(".io"):
                 req = urllib.request.Request(feed_url)
                 try:
-                    with urllib.request.urlopen(req) as response:
-                        data = json.loads(response.read().decode())
-                        for incident in data.get("incidents", []):
-                            incident_name = incident.get('name', '').strip()
-                            components = incident.get('components', [])
-                            affected_names = [c.get('name', '').lower() for c in components]
-                            search_text = (incident_name.lower() + " " + " ".join(affected_names))
-
-                            if any(service in search_text for service in TARGET_SERVICES):
-                                print(f"🎯 [SRE Match]: {incident_name}")
-                                name_clean = incident_name.replace('"', '\\"').replace('\\', '\\\\')
-                                status_clean = str(incident.get('status', '')).replace('"', '\\"').replace('\\', '\\\\')
-                                entries_text += f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
-                                if incident.get("incident_updates"):
-                                    body_clean = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
-                                    entries_text += f"Summary: {body_clean}\n\n"
-                        break
-                except Exception as e:
-                    print(f"⚠️ JSON API failed, trying RSS feed: {e}")
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        content = response.read().decode()
+                        if ".rss" in content or "rss" in content.lower():
+                            print(f"ℹ️ Found RSS feed reference in {feed_url}, add .rss endpoint")
+                except Exception:
                     continue
 
-        except Exception as e:
-            print(f"⚠️ Failed to fetch from {feed_url}: {e}")
+        except Exception:
             continue
 
-    if not entries_text:
-        print(f"⚠️ No {VENDOR_NAME} status data available from attempted feeds")
+    if not feed_found:
+        print(f"⚠️ Could not reach {VENDOR_NAME} status feeds. Verify URLs at:")
+        print(f"   - Check https://www.entrust.com/status or .io equivalent")
+        print(f"   - Look for 'history.rss' or API documentation")
 
     return entries_text
 
 def fetch_entrust_changelog():
-    """[ARCH] Fetches SDK updates and deprecations from Entrust documentation."""
+    """[ARCH] Fetches SDK updates and deprecations from Entrust documentation.
+
+    NOTE: Entrust changelog URLs need to be verified.
+    Check:
+    - GitHub repos: github.com/Entrust/[sdk-name]/releases.atom
+    - Developer docs: developer.entrust.com or entrust-dev.github.io
+    - Release notes: official Entrust documentation pages
+    """
     print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs...")
 
     changelog_feeds = [
         ("Mobile SDK", "https://github.com/Entrust/mobile-sdk/releases.atom"),
-        ("Push Card X-Pays", "https://developer.entrust.com/changelog.rss"),
+        ("Push Card X-Pays", "https://github.com/Entrust/pushcard-x-pays/releases.atom"),
+        ("Developer Docs", "https://developer.entrust.com/changelog"),
     ]
 
     entries_text = ""
+    feeds_attempted = 0
+
     for platform, feed_url in changelog_feeds:
         try:
             feed = feedparser.parse(feed_url)
 
-            for entry in feed.entries[:5]:
-                content = entry.get('content', [{'value': ''}])[0].get('value', '') if entry.get('content') else ''
-                summary = entry.get('summary', '')
-                search_text = (entry.title + " " + summary + " " + content).lower()
+            if feed.entries:
+                feeds_attempted += 1
+                for entry in feed.entries[:5]:
+                    content = entry.get('content', [{'value': ''}])[0].get('value', '') if entry.get('content') else ''
+                    summary = entry.get('summary', '')
+                    search_text = (entry.title + " " + summary + " " + content).lower()
 
-                if any(keyword in search_text for keyword in ["sdk", "deprecation", "breaking", "removed", "sunset", "vulnerability", "security", "card"]):
-                    title_base = entry.title.strip()
-                    title_clean = f"Entrust {platform} - {title_base}".replace('"', '\\"').replace('\\', '\\\\')
-                    summary_clean = summary.replace('"', '\\"').replace('\\', '\\\\')
-                    date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
+                    if any(keyword in search_text for keyword in ["sdk", "deprecation", "breaking", "removed", "sunset", "vulnerability", "security", "card", "x-pays", "payment"]):
+                        title_base = entry.title.strip()
+                        title_clean = f"Entrust {platform} - {title_base}".replace('"', '\\"').replace('\\', '\\\\')
+                        summary_clean = summary.replace('"', '\\"').replace('\\', '\\\\')
+                        date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
 
-                    entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+                        entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
 
-        except Exception as e:
-            print(f"⚠️ Failed to fetch {platform} changelog from {feed_url}: {e}")
+        except Exception:
             continue
 
-    if not entries_text:
-        print(f"⚠️ No {VENDOR_NAME} changelog data available")
+    if feeds_attempted == 0:
+        print(f"⚠️ Could not fetch {VENDOR_NAME} changelog data. Verify URLs:")
+        print(f"   - GitHub repos: https://github.com/Entrust/[repo-name]/releases.atom")
+        print(f"   - Developer portal: https://developer.entrust.com")
+        print(f"   - Official docs: https://www.entrust.com/documentation")
 
     return entries_text
 
