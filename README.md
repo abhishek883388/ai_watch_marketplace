@@ -1,6 +1,6 @@
-# 🚨 AI Vendor Watchdog: Multi-Vendor SRE & Architecture Monitoring
+# 🚨 AI Vendor Watch Agent: Multi-Vendor SRE & Architecture Monitoring
 
-An automated, cloud-native enterprise watchdog system designed to monitor, analyze, and categorize vendor incidents, deprecations, and breaking changes from **multiple critical vendors**: **Twilio**, **Jumio**, and **Entrust**.
+An automated, cloud-native enterprise watch agent system designed to monitor, analyze, and categorize vendor incidents, deprecations, and breaking changes from **multiple critical vendors**: **Twilio**, **Jumio**, and **Entrust**.
 
 Powered by **OpenAI API** (via Groq endpoint), it transforms unstructured status logs and changelogs into structured actionable telemetry, specifically evaluated from a **Backbase digital banking platform** perspective with deadline/urgency tracking.
 
@@ -21,16 +21,16 @@ Powered by **OpenAI API** (via Groq endpoint), it transforms unstructured status
 ┌──────────────────────────────────────────────────────────────┐
 │ GitHub Actions Cron Job (Runs Hourly)                        │
 │                                                              │
-│  1. twilio_watchdog.py   - Twilio incidents & deprecations  │
-│  2. jumio_watchdog.py    - Jumio incidents & deprecations   │
-│  3. entrust_watchdog.py  - Entrust incidents & deprecations │
-│  4. deadline_checker.py  - Urgency & deadline tracking      │
-│  5. OpenAI + Groq API integration for analysis              │
-│  6. Deduplication & database write                          │
+│  1. twilio_watch_agent.py   - Twilio incidents & deprecations  │
+│  2. jumio_watch_agent.py    - Jumio incidents & deprecations   │
+│  3. entrust_watch_agent.py  - Entrust incidents & deprecations │
+│  4. deadline_checker.py     - Urgency & deadline tracking      │
+│  5. OpenAI + Groq API integration for analysis                │
+│  6. Deduplication & database write                            │
 └──────────────────────────┬───────────────────────────────────┘
                            │
                            ▼
-              [ watchdog_alerts.csv ]
+              [ watch_agent_alerts.csv ]
                            │
           ┌────────────────┴────────────────┐
           ▼                                 ▼
@@ -53,7 +53,7 @@ Powered by **OpenAI API** (via Groq endpoint), it transforms unstructured status
    - Entrust: Statuspage.io JSON API
 2. **AI Intelligence Engine:** Uses OpenAI API (via Groq endpoint) with strict JSON schema outputs to extract product impacts, issue types, and calculate **Backbase actionability** and **deadline urgency**.
 3. **Deadline & Urgency Tracking:** Automatically detects and categorizes deadlines with urgency levels (OVERDUE, URGENT, UPCOMING, LOW PRIORITY).
-4. **Automated Storage Pipeline:** Deduplicates alerts by vendor + title and appends to `watchdog_alerts.csv` with full audit trail.
+4. **Automated Storage Pipeline:** Deduplicates alerts by vendor + title and appends to `watch_agent_alerts.csv` with full audit trail.
 5. **Data Synchronization:** Automatically streams updates to Google Sheets via `=IMPORTDATA()` to feed live Looker Studio executive dashboards.
 
 ---
@@ -73,11 +73,11 @@ Powered by **OpenAI API** (via Groq endpoint), it transforms unstructured status
 
 ---
 
-## 📊 Database Schema (`watchdog_alerts.csv`)
+## 📊 Database Schema (`watch_agent_alerts.csv`)
 
 | Column Name | Type | Description | Example Value |
 | --- | --- | --- | --- |
-| `logged_at` | Timestamp | Date/time incident was logged by Watchdog | `2026-08-18 18:23:02` |
+| `logged_at` | Timestamp | Date/time incident was logged by Watch Agent | `2026-08-18 18:23:02` |
 | `vendor` | String | Vendor source | `Twilio` / `Jumio` / `Entrust` |
 | `category` | String | System classification category | `SRE Incident` / `Architecture Deprecation` |
 | `title` | String | Heading of the vendor notice | `SMS Delivery Delays from Twilio to T-Mobile Germany` |
@@ -118,40 +118,40 @@ GROQ_API_KEY=gsk_your_actual_groq_api_key_here
 
 ### 4. Execute Manually
 
-Run individual vendor watchdogs:
+Run individual vendor watch agents:
 
 ```bash
 # Monitor Twilio incidents & deprecations
-python twilio_watchdog.py
+python twilio_watch_agent.py
 
 # Monitor Jumio incidents & deprecations
-python jumio_watchdog.py
+python jumio_watch_agent.py
 
 # Monitor Entrust incidents & deprecations
-python entrust_watchdog.py
+python entrust_watch_agent.py
 ```
 
 Or run all three in sequence:
 
 ```bash
-python twilio_watchdog.py && python jumio_watchdog.py && python entrust_watchdog.py
+python twilio_watch_agent.py && python jumio_watch_agent.py && python entrust_watch_agent.py
 ```
 
 ---
 
 ## 🌩️ GitHub Actions Continuous Integration
 
-The headless runner is defined in `.github/workflows/watchdog_cron.yml`. It runs automatically every hour via cron trigger or manually via `workflow_dispatch`.
+The headless runner is defined in `.github/workflows/watch_agent_cron.yml`. It runs automatically every hour via cron trigger or manually via `workflow_dispatch`.
 
 ### Workflow Execution
 
 Each hourly run executes in parallel:
-- `twilio_watchdog.py` - Fetches Twilio incidents & changelogs
-- `jumio_watchdog.py` - Fetches Jumio monitor incidents & changelogs
-- `entrust_watchdog.py` - Fetches Entrust DCS incidents & updates
+- `twilio_watch_agent.py` - Fetches Twilio incidents & changelogs
+- `jumio_watch_agent.py` - Fetches Jumio monitor incidents & changelogs
+- `entrust_watch_agent.py` - Fetches Entrust DCS incidents & updates
 - Deadline/urgency detection across all vendors
 - Deduplication and CSV database write
-- Auto-commit & push of `watchdog_alerts.csv` to repository
+- Auto-commit & push of `watch_agent_alerts.csv` to repository
 
 ### Repository Configuration
 
@@ -187,12 +187,12 @@ To connect your database directly to Google Sheets (and Looker Studio):
 2. In Cell `A1`, enter the following dynamic CSV import formula:
 
 ```excel
-=IMPORTDATA("https://raw.githubusercontent.com/abhishek883388/ai_watch_marketplace/main/watchdog_alerts.csv")
+=IMPORTDATA("https://raw.githubusercontent.com/abhishek883388/ai_watch_marketplace/main/watch_agent_alerts.csv")
 ```
 
 3. Connect the Google Sheet as the data source in **Google Looker Studio** to create executive dashboards.
 
-The data automatically refreshes every hour as new watchdog runs complete and push updates to the repository.
+The data automatically refreshes every hour as new watch agent runs complete and push updates to the repository.
 
 ---
 
@@ -200,24 +200,24 @@ The data automatically refreshes every hour as new watchdog runs complete and pu
 
 ```
 ai_watch_marketplace/
-├── twilio_watchdog.py          # Twilio SRE & architecture monitor
-├── jumio_watchdog.py           # Jumio SRE & architecture monitor
-├── entrust_watchdog.py         # Entrust SRE & architecture monitor
+├── twilio_watch_agent.py       # Twilio SRE & architecture monitor
+├── jumio_watch_agent.py        # Jumio SRE & architecture monitor
+├── entrust_watch_agent.py      # Entrust SRE & architecture monitor
 ├── deadline_checker.py         # Deadline extraction & urgency tracking utility
 ├── dashboard.py                # Streamlit monitoring dashboard
-├── watchdog_alerts.csv         # Master alert database (auto-updated hourly)
-├── watchdog_alerts.json        # JSON backup of alerts
+├── watch_agent_alerts.csv      # Master alert database (auto-updated hourly)
+├── watch_agent_alerts.json     # JSON backup of alerts
 ├── requirements.txt            # Python dependencies
 ├── README.md                   # This file
 └── .github/workflows/
-    └── watchdog_cron.yml       # GitHub Actions hourly trigger
+    └── watch_agent_cron.yml    # GitHub Actions hourly trigger
 ```
 
 ---
 
 ## 🧠 AI Analysis Pipeline
 
-Each watchdog script follows this analysis flow:
+Each watch agent script follows this analysis flow:
 
 ### 1. **Data Fetching**
 - Pulls raw incidents from vendor-specific APIs/RSS feeds
@@ -242,7 +242,7 @@ Each watchdog script follows this analysis flow:
   - **LOW PRIORITY:** > 30 days or no deadline
 
 ### 4. **Deduplication & Storage**
-- Checks `watchdog_alerts.csv` for duplicates (vendor + title match)
+- Checks `watch_agent_alerts.csv` for duplicates (vendor + title match)
 - Appends new alerts with full audit trail
 - Preserves historical records
 
@@ -252,7 +252,7 @@ Each watchdog script follows this analysis flow:
 
 ### Modify Service Filters
 
-Edit the `TARGET_SERVICES` list in each watchdog script:
+Edit the `TARGET_SERVICES` list in each watch agent script:
 
 **Twilio example:**
 ```python
@@ -268,14 +268,14 @@ TARGET_SERVICES = [
 
 ### Adjust Analysis Prompts
 
-Modify the LLM prompt templates in each watchdog script's `analyze_status()` and `analyze_changelog()` functions to customize:
+Modify the LLM prompt templates in each watch agent script's `analyze_status()` and `analyze_changelog()` functions to customize:
 - Action classification criteria
 - Backbase impact assessment
 - Output fields
 
 ### Change Execution Schedule
 
-Edit `.github/workflows/watchdog_cron.yml`:
+Edit `.github/workflows/watch_agent_cron.yml`:
 ```yaml
 on:
   schedule:
@@ -301,7 +301,7 @@ The Streamlit dashboard provides:
 
 ### Missing Alerts
 1. Check `GROQ_API_KEY` is set correctly in GitHub Actions Secrets
-2. Verify vendor status pages are accessible (check URLs in watchdog scripts)
+2. Verify vendor status pages are accessible (check URLs in watch agent scripts)
 3. Review GitHub Actions logs for specific errors
 
 ### Duplicate Entries
