@@ -257,7 +257,7 @@ def parse_ai_json(raw_json):
 # ==========================================
 def save_alerts_to_file(alerts):
     """Updates existing alerts, auto-resolves vanished SRE incidents, or appends new ones."""
-    csv_filename = "entrust_alerts.csv"
+    csv_filename = "watchdog_alerts.csv"
     keys = [
         "logged_at",
         "vendor",
