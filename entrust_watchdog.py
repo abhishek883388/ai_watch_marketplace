@@ -377,6 +377,8 @@ def save_alerts_to_file(alerts):
         "logged_at",
         "vendor",
         "category",
+        "urgency_level",
+        "deadline_date",
         "title",
         "product_impacted",
         "type",
@@ -410,6 +412,8 @@ def save_alerts_to_file(alerts):
             "logged_at": timestamp,
             "vendor": VENDOR_NAME,
             "category": alert.get('category') or 'SRE Incident',
+            "urgency_level": alert.get('urgency_level') or 'NORMAL',
+            "deadline_date": alert.get('deadline_date') or 'N/A',
             "title": title,
             "product_impacted": alert.get('product_impacted') or 'Unspecified',
             "type": alert.get('type') or 'N/A',
@@ -434,11 +438,18 @@ def save_alerts_to_file(alerts):
                 row['status_or_date'] = 'Resolved'
                 auto_resolved_count += 1
 
-    # 3. Write updated database back to CSV
+    # 3. Sort by urgency level (OVERDUE, CRITICAL, WARNING, NORMAL)
+    urgency_order = {'OVERDUE': 0, 'CRITICAL': 1, 'WARNING': 2, 'NORMAL': 3}
+    sorted_titles = sorted(
+        record_order,
+        key=lambda t: (urgency_order.get(existing_records[t].get('urgency_level', 'NORMAL'), 4), t)
+    )
+
+    # 4. Write updated database back to CSV
     with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
         writer.writeheader()
-        for title in record_order:
+        for title in sorted_titles:
             writer.writerow(existing_records[title])
 
     os.chmod(csv_filename, 0o600)
@@ -456,6 +467,9 @@ def main():
     all_alerts = []
     all_alerts.extend(analyze_status(fetch_entrust_status()))
     all_alerts.extend(analyze_deprecations(fetch_entrust_changelog()))
+
+    # Enrich alerts with urgency/deadline information
+    all_alerts = enrich_alerts_with_urgency(all_alerts)
 
     save_alerts_to_file(all_alerts)
     print("\n✅ Script execution complete. Exiting clean.")
