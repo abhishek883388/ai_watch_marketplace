@@ -35,19 +35,17 @@ TARGET_SERVICES = [
 # 2. DATA FETCHERS
 # ==========================================
 def fetch_entrust_status():
-    """[SRE] Fetches active incidents from Entrust's status page.
+    """[SRE] Fetches active incidents from Entrust's DCS status page.
 
-    NOTE: Entrust status page URL needs to be verified.
-    Common patterns: status.entrust.com, entrust.statuspage.io, or check https://www.entrust.com/status
-    Update status_feeds list below with correct URLs if they change.
+    Entrust uses Statuspage.io for status tracking.
+    Official page: https://entrust-dcs.statuspage.io/
     """
     print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates...")
 
-    # Try multiple Entrust status endpoints (update these with verified working URLs)
+    # Entrust DCS (Digital Certificate Services) Statuspage.io feeds
     status_feeds = [
-        "https://entrust.statuspage.io/history.rss",  # Statuspage.io format
-        "https://status.entrust.com/history.rss",     # Direct status domain
-        "https://www.entrust.com/status",             # Main status page
+        "https://entrust-dcs.statuspage.io/history.rss",      # Primary RSS feed
+        "https://entrust-dcs.statuspage.io/api/v2/incidents.json",  # JSON API
     ]
 
     entries_text = ""
@@ -84,27 +82,27 @@ def fetch_entrust_status():
             continue
 
     if not feed_found:
-        print(f"⚠️ Could not reach {VENDOR_NAME} status feeds. Verify URLs at:")
-        print(f"   - Check https://www.entrust.com/status or .io equivalent")
-        print(f"   - Look for 'history.rss' or API documentation")
+        print(f"⚠️ Could not reach {VENDOR_NAME} status feeds. Check:")
+        print(f"   - https://entrust-dcs.statuspage.io/ (main status page)")
+        print(f"   - RSS feed: https://entrust-dcs.statuspage.io/history.rss")
+        print(f"   - API: https://entrust-dcs.statuspage.io/api/v2/incidents.json")
 
     return entries_text
 
 def fetch_entrust_changelog():
     """[ARCH] Fetches SDK updates and deprecations from Entrust documentation.
 
-    NOTE: Entrust changelog URLs need to be verified.
-    Check:
-    - GitHub repos: github.com/Entrust/[sdk-name]/releases.atom
-    - Developer docs: developer.entrust.com or entrust-dev.github.io
-    - Release notes: official Entrust documentation pages
+    Entrust publishes updates through:
+    - GitHub repositories: github.com/Entrust/[sdk-repo]/releases.atom
+    - Developer portal: https://docs.entrust.com or https://developer.entrust.com
+    - Product announcements and release notes
     """
     print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs...")
 
     changelog_feeds = [
         ("Mobile SDK", "https://github.com/Entrust/mobile-sdk/releases.atom"),
-        ("Push Card X-Pays", "https://github.com/Entrust/pushcard-x-pays/releases.atom"),
-        ("Developer Docs", "https://developer.entrust.com/changelog"),
+        ("Push Card SDK", "https://github.com/Entrust/pushcard-sdk/releases.atom"),
+        ("Digital Banking APIs", "https://github.com/Entrust/digital-banking-apis/releases.atom"),
     ]
 
     entries_text = ""
