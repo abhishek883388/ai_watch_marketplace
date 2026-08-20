@@ -87,26 +87,34 @@ def fetch_entrust_status():
     return entries_text
 
 def fetch_entrust_changelog():
-    """[ARCH] Fetches SDK updates and deprecations from Entrust documentation.
+    """[ARCH] Fetches SDK updates and deprecations from Entrust documentation and support portals.
 
-    NOTE: Entrust publishes release notes and API changes through:
+    Entrust publishes deprecations and breaking changes through:
     - Official documentation: https://docs.entrust.com/
     - Developer portal: https://developer.entrust.com/
-    - Release notes pages (check for RSS feeds)
-    - Support portal announcements
+    - Support/Knowledge Base: Freshdesk or similar portals
+    - Release notes pages with RSS feeds
+    - Blog and announcements
 
-    Public GitHub repos may not be available for all SDKs.
-    Monitor official Entrust channels for breaking changes and deprecations.
+    Searches for: SDK upgrades, expiry dates, deprecations, breaking changes,
+    end-of-life announcements, security updates, API changes.
     """
     print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs...")
 
-    # Try multiple sources for Entrust release information
+    # Try multiple sources for Entrust release information and deprecations
     changelog_feeds = [
-        # GitHub public repos (if available)
-        ("GitHub - Mobile SDK", "https://github.com/Entrust/mobile-sdk/releases.atom"),
+        # Support portal / Knowledge base (FAQ, important updates, deprecations)
+        # Freshdesk support portals typically have RSS feeds
+        ("Support Portal RSS", "https://entrust-support.freshdesk.com/support/solutions/rss"),
+        ("Support Portal - FAQ", "https://entrust-support.freshdesk.com/en/support/solutions/rss"),
+        ("Support Solutions", "https://entrust-support.freshdesk.com/support/solutions/articles/rss"),
         # Official Entrust documentation feeds
         ("Developer Docs", "https://docs.entrust.com/feed.xml"),
         ("Release Notes", "https://www.entrust.com/release-notes/rss"),
+        # Blog
+        ("Blog", "https://www.entrust.com/blog/feed/"),
+        # GitHub public repos (if available)
+        ("GitHub - Mobile SDK", "https://github.com/Entrust/mobile-sdk/releases.atom"),
     ]
 
     entries_text = ""
@@ -123,8 +131,13 @@ def fetch_entrust_changelog():
                     summary = entry.get('summary', '')
                     search_text = (entry.title + " " + summary + " " + content).lower()
 
-                    # Look for deprecation, breaking changes, security updates
-                    if any(keyword in search_text for keyword in ["deprecat", "breaking", "removed", "sunset", "vulnerab", "security", "breaking change", "upgrade required", "end of support", "migration", "card"]):
+                    # Look for deprecation, breaking changes, security updates, and important FAQs
+                    if any(keyword in search_text for keyword in [
+                        "deprecat", "breaking", "removed", "sunset", "vulnerab", "security",
+                        "upgrade required", "end of support", "end of life", "eol", "migration",
+                        "sdk upgrade", "expiry date", "expire", "no longer support", "important faq",
+                        "important notice", "breaking change", "api change", "card", "payment"
+                    ]):
                         title_base = entry.title.strip()
                         title_clean = f"Entrust {platform} - {title_base}".replace('"', '\\"').replace('\\', '\\\\')
                         summary_clean = summary.replace('"', '\\"').replace('\\', '\\\\')
@@ -137,11 +150,12 @@ def fetch_entrust_changelog():
 
     if feeds_found == 0:
         print(f"ℹ️ No {VENDOR_NAME} changelog feeds currently accessible.")
-        print(f"   Manual sources to monitor:")
-        print(f"   - https://docs.entrust.com/ (API documentation)")
+        print(f"   Manual sources to monitor for deprecations:")
+        print(f"   - https://entrust-support.freshdesk.com/ (Support portal - FAQs & important updates)")
+        print(f"   - https://docs.entrust.com/ (API documentation & release notes)")
         print(f"   - https://developer.entrust.com/ (Developer portal)")
         print(f"   - https://www.entrust.com/ (Press releases & announcements)")
-        print(f"   - Check for RSS feeds on these pages and update fetch_entrust_changelog()")
+        print(f"   - Look for 'SDK upgrade', 'expiry date', 'deprecation' in support articles")
 
     return entries_text
 
