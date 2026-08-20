@@ -21,14 +21,14 @@ client = OpenAI(
 VENDOR_NAME = "Entrust"
 
 TARGET_SERVICES = [
-    "push card",
-    "x-pays",
+    "digital card",
+    "mobile sdk",
+    "card solution",
+    "issuer tsp",
     "apple pay",
     "google pay",
-    "secure card display",
-    "card number",
-    "cvv",
-    "pin"
+    "push notification",
+    "wallet"
 ]
 
 # ==========================================
@@ -39,53 +39,50 @@ def fetch_entrust_status():
 
     Entrust uses Statuspage.io for status tracking.
     Official page: https://entrust-dcs.statuspage.io/
+    Uses JSON API to fetch unresolved incidents only.
     """
     print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates...")
 
-    # Entrust DCS (Digital Certificate Services) Statuspage.io feeds
-    status_feeds = [
-        "https://entrust-dcs.statuspage.io/history.rss",      # Primary RSS feed
-        "https://entrust-dcs.statuspage.io/api/v2/incidents.json",  # JSON API
-    ]
-
     entries_text = ""
-    feed_found = False
 
-    for feed_url in status_feeds:
-        try:
-            if feed_url.endswith(".rss"):
-                feed = feedparser.parse(feed_url)
-                if feed.entries:
-                    feed_found = True
-                    for entry in feed.entries[:15]:
-                        search_text = (entry.title + " " + entry.get('summary', '')).lower()
+    try:
+        # Use Statuspage.io JSON API to fetch incidents
+        api_url = "https://entrust-dcs.statuspage.io/api/v2/incidents.json"
+        req = urllib.request.Request(api_url)
 
-                        if any(service in search_text for service in TARGET_SERVICES):
-                            title_clean = entry.title.strip().replace('"', '\\"').replace('\\', '\\\\')
-                            summary_clean = entry.get('summary', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
-                            date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
-                            print(f"🎯 [SRE Match]: {entry.title.strip()}")
-                            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
-                    break
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
 
-            elif feed_url.endswith(".com") or feed_url.endswith(".io"):
-                req = urllib.request.Request(feed_url)
-                try:
-                    with urllib.request.urlopen(req, timeout=5) as response:
-                        content = response.read().decode()
-                        if ".rss" in content or "rss" in content.lower():
-                            print(f"ℹ️ Found RSS feed reference in {feed_url}, add .rss endpoint")
-                except Exception:
-                    continue
+        incidents = data.get("incidents", [])
 
-        except Exception:
-            continue
+        # Filter for unresolved incidents matching our services
+        for incident in incidents:
+            incident_name = incident.get('name', '').strip()
+            status = incident.get('status', '').lower()
 
-    if not feed_found:
-        print(f"⚠️ Could not reach {VENDOR_NAME} status feeds. Check:")
-        print(f"   - https://entrust-dcs.statuspage.io/ (main status page)")
-        print(f"   - RSS feed: https://entrust-dcs.statuspage.io/history.rss")
-        print(f"   - API: https://entrust-dcs.statuspage.io/api/v2/incidents.json")
+            # Only include unresolved incidents
+            if status in ['resolved', 'completed', 'postmortem']:
+                continue
+
+            components = incident.get('components', [])
+            affected_names = [c.get('name', '').lower() for c in components]
+            search_text = (incident_name.lower() + " " + " ".join(affected_names))
+
+            if any(service in search_text for service in TARGET_SERVICES):
+                print(f"🎯 [SRE Match]: {incident_name}")
+                name_clean = incident_name.replace('"', '\\"').replace('\\', '\\\\')
+                status_clean = status.replace('"', '\\"').replace('\\', '\\\\')
+                entries_text += f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
+
+                if incident.get("incident_updates"):
+                    update_body = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
+                    entries_text += f"Summary: {update_body}\n\n"
+
+    except Exception as e:
+        print(f"⚠️ [SRE API Error] Failed to fetch {VENDOR_NAME} status (check network): {type(e).__name__}")
+
+    if not entries_text:
+        print(f"ℹ️ No unresolved {VENDOR_NAME} incidents matching monitored services")
 
     return entries_text
 
@@ -101,8 +98,8 @@ def fetch_entrust_changelog():
 
     changelog_feeds = [
         ("Mobile SDK", "https://github.com/Entrust/mobile-sdk/releases.atom"),
-        ("Push Card SDK", "https://github.com/Entrust/pushcard-sdk/releases.atom"),
-        ("Digital Banking APIs", "https://github.com/Entrust/digital-banking-apis/releases.atom"),
+        ("Digital Card Solution", "https://github.com/Entrust/digital-card/releases.atom"),
+        ("Card APIs", "https://github.com/Entrust/card-api/releases.atom"),
     ]
 
     entries_text = ""
