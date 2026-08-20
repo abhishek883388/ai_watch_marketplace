@@ -5,6 +5,7 @@ import os
 import csv
 from datetime import datetime
 from openai import OpenAI
+from deadline_checker import check_deadline_status, extract_deadline_from_text
 
 # ==========================================
 # 1. CONFIGURATION & CREDENTIALS
@@ -177,6 +178,50 @@ def parse_ai_json(raw_json):
     except (json.JSONDecodeError, ValueError) as e:
         raise RuntimeError(f"Failed to parse LLM response: {e}\nRaw content: {raw_json[:200]}")
 
+def enrich_alerts_with_urgency(alerts):
+    """Add urgency_level and deadline_date fields to alerts based on status_or_date.
+
+    Args:
+        alerts: List of alert dictionaries from AI analysis
+
+    Returns:
+        List of enriched alerts with urgency information
+    """
+    for alert in alerts:
+        status_str = alert.get('status_or_date', '')
+        impact_str = alert.get('impact_summary', '')
+
+        # Try to extract deadline from status and impact summary
+        deadline_info = check_deadline_status(status_str)
+        impact_deadlines = extract_deadline_from_text(impact_str)
+
+        # If we found a deadline, use it
+        if deadline_info.get('deadline_date'):
+            alert['deadline_date'] = deadline_info['deadline_date']
+            alert['urgency_level'] = deadline_info['urgency_level']
+
+            # Update action_required based on urgency
+            if deadline_info['urgency_level'] == 'OVERDUE':
+                alert['backbase_action_required'] = 'OVERDUE - Action Required'
+            elif deadline_info['urgency_level'] == 'CRITICAL':
+                alert['backbase_action_required'] = 'CRITICAL - Immediate Action'
+
+            # Log urgent items
+            if deadline_info['urgency_level'] in ['OVERDUE', 'CRITICAL']:
+                print(f"⚠️  {deadline_info['urgency_level']} ITEM: {alert.get('title')} - {deadline_info['message']}")
+        elif impact_deadlines:
+            # Check first extracted deadline
+            first_deadline = impact_deadlines[0][1]
+            deadline_info = check_deadline_status(first_deadline)
+            if deadline_info.get('deadline_date'):
+                alert['deadline_date'] = deadline_info['deadline_date']
+                alert['urgency_level'] = deadline_info['urgency_level']
+        else:
+            alert['deadline_date'] = None
+            alert['urgency_level'] = 'NORMAL'
+
+    return alerts
+
 # ==========================================
 # 4. STORAGE (CSV WITH AUTO-RESOLUTION)
 # ==========================================
@@ -184,15 +229,17 @@ def save_alerts_to_file(alerts):
     """Updates existing alerts, auto-resolves vanished SRE incidents, or appends new ones."""
     csv_filename = "watchdog_alerts.csv"
     keys = [
-        "logged_at", 
+        "logged_at",
         "vendor",
-        "category", 
-        "title", 
-        "product_impacted", 
-        "type", 
-        "status_or_date", 
-        "impact_summary", 
-        "backbase_action_required", 
+        "category",
+        "urgency_level",
+        "deadline_date",
+        "title",
+        "product_impacted",
+        "type",
+        "status_or_date",
+        "impact_summary",
+        "backbase_action_required",
         "backbase_rationale"
     ]
     
@@ -220,6 +267,8 @@ def save_alerts_to_file(alerts):
             "logged_at": timestamp,
             "vendor": VENDOR_NAME,
             "category": alert.get('category') or 'SRE Incident',
+            "urgency_level": alert.get('urgency_level') or 'NORMAL',
+            "deadline_date": alert.get('deadline_date') or 'N/A',
             "title": title,
             "product_impacted": alert.get('product_impacted') or 'Unspecified',
             "type": alert.get('type') or 'N/A',
@@ -246,11 +295,18 @@ def save_alerts_to_file(alerts):
                 row['status_or_date'] = 'Resolved'
                 auto_resolved_count += 1
 
-    # 3. Write updated database back to CSV
+    # 3. Sort by urgency level (OVERDUE, CRITICAL, WARNING, NORMAL)
+    urgency_order = {'OVERDUE': 0, 'CRITICAL': 1, 'WARNING': 2, 'NORMAL': 3}
+    sorted_titles = sorted(
+        record_order,
+        key=lambda t: (urgency_order.get(existing_records[t].get('urgency_level', 'NORMAL'), 4), t)
+    )
+
+    # 4. Write updated database back to CSV
     with open(csv_filename, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=keys, extrasaction='ignore')
         writer.writeheader()
-        for title in record_order:
+        for title in sorted_titles:
             writer.writerow(existing_records[title])
 
     os.chmod(csv_filename, 0o600)
@@ -264,11 +320,14 @@ def main():
     print("==================================================")
     print(f"🚨 AI VENDOR WATCHDOG: {VENDOR_NAME} SRE & ARCHITECTURE")
     print("==================================================\n")
-    
+
     all_alerts = []
     all_alerts.extend(analyze_status(fetch_twilio_status()))
     all_alerts.extend(analyze_deprecations(fetch_twilio_changelog()))
-    
+
+    # Enrich alerts with urgency/deadline information
+    all_alerts = enrich_alerts_with_urgency(all_alerts)
+
     save_alerts_to_file(all_alerts)
     print("\n✅ Script execution complete. Exiting clean.")
 

@@ -6,6 +6,7 @@ import csv
 import re
 from datetime import datetime
 from openai import OpenAI
+from deadline_checker import check_deadline_status, extract_deadline_from_text
 
 # ==========================================
 # 1. CONFIGURATION & CREDENTIALS
@@ -320,6 +321,51 @@ def parse_ai_json(raw_json):
             raise ValueError(f"Expected JSON object or array, got {type(data).__name__}")
     except (json.JSONDecodeError, ValueError) as e:
         raise RuntimeError(f"Failed to parse LLM response: {e}\nRaw content: {raw_json[:200]}")
+
+def enrich_alerts_with_urgency(alerts):
+    """Add urgency_level and deadline_date fields to alerts based on status_or_date.
+
+    Args:
+        alerts: List of alert dictionaries from AI analysis
+
+    Returns:
+        List of enriched alerts with urgency information
+    """
+    for alert in alerts:
+        status_str = alert.get('status_or_date', '')
+        impact_str = alert.get('impact_summary', '')
+
+        # Try to extract deadline from status and impact summary
+        deadline_info = check_deadline_status(status_str)
+        impact_deadlines = extract_deadline_from_text(impact_str)
+
+        # If we found a deadline, use it
+        if deadline_info.get('deadline_date'):
+            alert['deadline_date'] = deadline_info['deadline_date']
+            alert['urgency_level'] = deadline_info['urgency_level']
+
+            # Update action_required based on urgency
+            if deadline_info['urgency_level'] == 'OVERDUE':
+                alert['backbase_action_required'] = 'OVERDUE - Action Required'
+            elif deadline_info['urgency_level'] == 'CRITICAL':
+                alert['backbase_action_required'] = 'CRITICAL - Immediate Action'
+
+            # Log urgent items
+            if deadline_info['urgency_level'] in ['OVERDUE', 'CRITICAL']:
+                print(f"⚠️  {deadline_info['urgency_level']} ITEM: {alert.get('title')} - {deadline_info['message']}")
+        elif impact_deadlines:
+            # Check first extracted deadline
+            first_deadline = impact_deadlines[0][1]
+            deadline_info = check_deadline_status(first_deadline)
+            if deadline_info.get('deadline_date'):
+                alert['deadline_date'] = deadline_info['deadline_date']
+                alert['urgency_level'] = deadline_info['urgency_level']
+        else:
+            alert['deadline_date'] = None
+            alert['urgency_level'] = 'NORMAL'
+
+    return alerts
+
 
 # ==========================================
 # 4. STORAGE (CSV WITH AUTO-RESOLUTION)
