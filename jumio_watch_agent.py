@@ -242,7 +242,7 @@ def enrich_alerts_with_urgency(alerts):
 # ==========================================
 def save_alerts_to_file(alerts):
     """Updates existing alerts, auto-resolves vanished SRE incidents, or appends new ones."""
-    csv_filename = "watchdog_alerts.csv"
+    csv_filename = "watch_agent_alerts.csv"
     keys = [
         "logged_at",
         "vendor",
@@ -331,7 +331,7 @@ def save_alerts_to_file(alerts):
 # ==========================================
 def main():
     print("==================================================")
-    print(f"🚨 AI VENDOR WATCHDOG: {VENDOR_NAME} SRE & ARCHITECTURE")
+    print(f"🚨 AI VENDOR WATCH AGENT: {VENDOR_NAME} SRE & ARCHITECTURE")
     print("==================================================\n")
 
     all_alerts = []

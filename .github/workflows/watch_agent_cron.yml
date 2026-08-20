@@ -1,4 +1,4 @@
-name: AI Watchdog Cron Job
+name: AI Watch Agent Cron Job
 
 on:
   schedule:
@@ -44,6 +44,6 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add watchdog_alerts.csv
+          git add watch_agent_alerts.csv
           git commit -m "Automated SRE database update [skip ci]" || exit 0
           git push

@@ -3,7 +3,6 @@ import urllib.request
 import json
 import os
 import csv
-import re
 from datetime import datetime
 from openai import OpenAI
 from deadline_checker import check_deadline_status, extract_deadline_from_text
@@ -20,191 +19,65 @@ client = OpenAI(
     api_key=groq_api_key
 )
 
-VENDOR_NAME = "Entrust"
+VENDOR_NAME = "Twilio"
 
 TARGET_SERVICES = [
-    "digital card",
-    "mobile sdk",
-    "card solution",
-    "issuer tsp",
-    "apple pay",
-    "google pay",
-    "push notification",
-    "wallet"
+    "programmable messaging",
+    "programmable chat",
+    "sender id",
+    "sendgrid",
+    "sms",
+    "short code"
 ]
 
 # ==========================================
 # 2. DATA FETCHERS
 # ==========================================
-def fetch_entrust_status():
-    """[SRE] Fetches active incidents from Entrust's DCS status page.
-
-    Entrust uses Statuspage.io for status tracking.
-    Official page: https://entrust-dcs.statuspage.io/
-    Uses JSON API to fetch unresolved incidents only.
-    """
+def fetch_twilio_status():
+    """[SRE] Fetches active incidents from the Twilio Status REST API."""
     print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates...")
-
-    entries_text = ""
+    url = "https://status.twilio.com/api/v2/incidents/unresolved.json"
+    req = urllib.request.Request(url)
 
     try:
-        # Use Statuspage.io JSON API to fetch incidents
-        api_url = "https://entrust-dcs.statuspage.io/api/v2/incidents.json"
-        req = urllib.request.Request(api_url)
-
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req) as response:
             data = json.loads(response.read().decode())
-
-        incidents = data.get("incidents", [])
-
-        # Filter for unresolved incidents matching our services
-        for incident in incidents:
-            incident_name = incident.get('name', '').strip()
-            status = incident.get('status', '').lower()
-
-            # Only include unresolved incidents
-            if status in ['resolved', 'completed', 'postmortem']:
-                continue
-
-            components = incident.get('components', [])
-            affected_names = [c.get('name', '').lower() for c in components]
-            search_text = (incident_name.lower() + " " + " ".join(affected_names))
-
-            if any(service in search_text for service in TARGET_SERVICES):
-                print(f"🎯 [SRE Match]: {incident_name}")
-                name_clean = incident_name.replace('"', '\\"').replace('\\', '\\\\')
-                status_clean = status.replace('"', '\\"').replace('\\', '\\\\')
-                entries_text += f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
-
-                if incident.get("incident_updates"):
-                    update_body = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
-                    entries_text += f"Summary: {update_body}\n\n"
-
     except Exception as e:
-        print(f"⚠️ [SRE API Error] Failed to fetch {VENDOR_NAME} status (check network): {type(e).__name__}")
+        print(f"❌ Error fetching status API: {e}")
+        return ""
+        
+    entries_text = ""
+    for incident in data.get("incidents", []):
+        incident_name = incident.get('name', '').strip()
+        components = incident.get('components', [])
+        affected_names = [c.get('name', '').lower() for c in components]
+        search_text = (incident_name.lower() + " " + " ".join(affected_names))
 
-    if not entries_text:
-        print(f"ℹ️ No unresolved {VENDOR_NAME} incidents matching monitored services")
+        if any(service in search_text for service in TARGET_SERVICES):
+            print(f"🎯 [SRE Match]: {incident_name}")
+            name_clean = incident_name.replace('"', '\\"').replace('\\', '\\\\')
+            status_clean = str(incident.get('status', '')).replace('"', '\\"').replace('\\', '\\\\')
+            entries_text += f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
+            if incident.get("incident_updates"):
+                body_clean = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
+                entries_text += f"Summary: {body_clean}\n\n"
 
     return entries_text
 
-def fetch_entrust_changelog():
-    """[ARCH] Fetches SDK updates and deprecations from Entrust/Antelop support portal.
-
-    Entrust publishes deprecations and breaking changes through:
-    - Antelop Support Portal (Freshdesk): https://antelop-support.freshdesk.com/
-      * Important FAQs about SDK upgrades and expiry dates
-      * Security announcements (TLS certificate renewals, vulnerabilities)
-      * Breaking changes and API deprecations
-      * End-of-support notices
-    - Official Entrust documentation
-    - Release notes and announcements
-
-    Captures: SDK upgrades, expiry dates, certificate renewals, deprecations,
-    breaking changes, end-of-life announcements, security updates, API changes.
-    """
-    print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs from Antelop support portal...")
+def fetch_twilio_changelog():
+    """[ARCH] Fetches deprecations/changelogs from the Twilio RSS feed."""
+    print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} changelogs...")
+    feed_url = "https://www.twilio.com/changelog/feed"
+    feed = feedparser.parse(feed_url)
 
     entries_text = ""
-
-    # PRIMARY: Scrape Antelop support portal for deprecations and FAQs
-    entries_text += fetch_antelop_articles()
-
-    # FALLBACK: Try RSS feeds (in case Entrust enables them in future)
-    changelog_feeds = [
-        ("Entrust Developer Docs", "https://docs.entrust.com/feed.xml"),
-        ("Entrust Blog", "https://www.entrust.com/blog/feed/"),
-    ]
-
-    feeds_found = 0
-    for platform, feed_url in changelog_feeds:
-        try:
-            feed = feedparser.parse(feed_url)
-
-            if feed.entries:
-                feeds_found += 1
-                for entry in feed.entries[:5]:
-                    content = entry.get('content', [{'value': ''}])[0].get('value', '') if entry.get('content') else ''
-                    summary = entry.get('summary', '')
-                    search_text = (entry.title + " " + summary + " " + content).lower()
-
-                    if any(keyword in search_text for keyword in [
-                        "deprecat", "breaking", "removed", "sunset", "vulnerab", "security",
-                        "upgrade required", "end of support", "end of life", "eol", "migration",
-                        "sdk upgrade", "expiry date", "expire", "important faq"
-                    ]):
-                        title_base = entry.title.strip()
-                        title_clean = f"Entrust {platform} - {title_base}".replace('"', '\\"').replace('\\', '\\\\')
-                        summary_clean = summary.replace('"', '\\"').replace('\\', '\\\\')
-                        date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
-
-                        entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
-
-        except Exception:
-            continue
-
-    if feeds_found == 0:
-        print(f"✓ Scraped {len(entries_text.split('EXACT_TITLE:')) - 1} relevant articles from Antelop support portal")
-
-    return entries_text
-
-def fetch_antelop_articles():
-    """[ARCH] Scrapes Antelop support portal (Entrust) for deprecations and important FAQs.
-
-    Antelop is Entrust's Freshdesk support portal. This scraper extracts articles about:
-    - SDK upgrades and expiry dates
-    - TLS/SSL certificate changes and renewals
-    - Breaking changes and deprecations
-    - Important FAQs and security notices
-    """
-    print(f"📡 [ARCH] Scraping Antelop support portal for {VENDOR_NAME} deprecations...")
-
-    entries_text = ""
-    antelop_folder_url = "https://antelop-support.freshdesk.com/en/support/solutions/folders/44001203376"
-
-    try:
-        req = urllib.request.Request(
-            antelop_folder_url,
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            html = response.read().decode('utf-8', errors='ignore')
-
-        # Extract articles using regex pattern for Freshdesk article links
-        articles = re.findall(r'/en/support/solutions/articles/(\d+)-([^"\'<]+)', html)
-
-        if not articles:
-            print(f"   ⚠️ No articles found in Antelop folder")
-            return entries_text
-
-        print(f"   ✅ Found {len(articles)} articles in Antelop portal")
-
-        # Keywords to filter for deprecations and important updates
-        search_keywords = [
-            "deprecat", "breaking", "removed", "sunset", "vulnerab", "security",
-            "upgrade required", "end of support", "end of life", "eol", "migration",
-            "sdk upgrade", "expiry date", "expire", "important faq", "certificate",
-            "tls", "ssl", "renewal", "breaking change", "api change"
-        ]
-
-        for article_id, slug in articles:
-            # Convert slug to readable title
-            article_title = slug.replace('-', ' ').strip()
-            search_text = article_title.lower()
-
-            # Check if matches our search keywords
-            if any(keyword in search_text for keyword in search_keywords):
-                print(f"   🎯 [{article_id}] {article_title[:70]}")
-
-                title_clean = article_title.replace('"', '\\"').replace('\\', '\\\\')
-                url_clean = f"https://antelop-support.freshdesk.com/en/support/solutions/articles/{article_id}-{slug}".replace('"', '\\"')
-
-                entries_text += f"EXACT_TITLE: {title_clean}\nArticle ID: {article_id}\nURL: {url_clean}\n\n"
-
-    except urllib.error.URLError as e:
-        print(f"   ⚠️ Failed to reach Antelop portal: {type(e).__name__}")
-    except Exception as e:
-        print(f"   ⚠️ Error scraping Antelop: {type(e).__name__}")
+    for entry in feed.entries[:20]:
+        search_text = (entry.title + " " + entry.summary).lower()
+        if any(service in search_text for service in TARGET_SERVICES):
+            title_clean = entry.title.replace('"', '\\"').replace('\\', '\\\\')
+            date_clean = entry.published.replace('"', '\\"').replace('\\', '\\\\')
+            summary_clean = entry.summary.replace('"', '\\"').replace('\\', '\\\\')
+            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
 
     return entries_text
 
@@ -212,21 +85,13 @@ def fetch_antelop_articles():
 # 3. AI ANALYZERS (Groq / GPT-OSS-20B)
 # ==========================================
 def analyze_status(status_text):
-    """Parses SRE live incidents with Backbase payment card context."""
-    if not status_text:
-        return []
+    """Parses SRE live incidents with Backbase Context."""
+    if not status_text: return []
     print(f"🧠 [SRE AI] Analyzing active {VENDOR_NAME} outages...")
     prompt = f"""
-    You are a Site Reliability Engineer for Backbase (digital banking platform).
-    Read the {VENDOR_NAME} incident entries for Push Card X-Pays and Secure Card Display.
-
+    You are a Site Reliability Engineer for Backbase.
+    Read the Twilio Status entries. Identify active incidents.
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter capitalization, wording, or spelling.
-
-    Focus on:
-    1. How does this incident impact Backbase's Apple/Google Pay integration?
-    2. Does this affect secure card display (number, CVV, expiry, PIN)?
-    3. Are payment processing or card handling APIs affected?
-    4. Is there a security risk to cardholder data?
 
     Output strictly as JSON:
     {{
@@ -235,11 +100,11 @@ def analyze_status(status_text):
           "category": "SRE Incident",
           "title": "EXACT title string from input",
           "type": "Outage, Degraded Performance, or Delays",
-          "product_impacted": "Push Card X-Pays or Secure Card Display",
+          "product_impacted": "specific product name",
           "status_or_date": "Investigating, Identified, or Monitoring",
-          "impact_summary": "1 sentence summary of how payment card features are impacted",
+          "impact_summary": "1 sentence summary",
           "backbase_action_required": "Immediate Action, Monitor, or No Action",
-          "backbase_rationale": "1 sentence on payment/card security implications"
+          "backbase_rationale": "1 sentence justification"
         }}
       ]
     }}
@@ -259,22 +124,13 @@ def analyze_status(status_text):
         return []
 
 def analyze_deprecations(changelog_text):
-    """Parses breaking changes and SDK deprecations with Backbase payment context."""
-    if not changelog_text:
-        return []
+    """Parses breaking changes and deprecations with Backbase Context."""
+    if not changelog_text: return []
     print(f"🧠 [ARCH AI] Analyzing {VENDOR_NAME} deprecations...")
     prompt = f"""
-    You are a Software Architect for Backbase (digital banking platform).
-    Read the {VENDOR_NAME} changelog entries for payment card features.
-    Identify ONLY items that represent a deprecation, breaking change, SDK sunset, or security update.
-
+    You are a Software Architect for Backbase.
+    Read the Twilio changelog entries. Identify ONLY items that represent a deprecation, breaking change, or compliance update.
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter wording.
-
-    Focus on:
-    1. Will this require code migration in Backbase's payment processing?
-    2. Does this affect our Apple/Google Pay integration?
-    3. Are there security implications for card data handling?
-    4. Do we need to update our secure card display implementation?
 
     Output strictly as JSON:
     {{
@@ -282,12 +138,12 @@ def analyze_deprecations(changelog_text):
         {{
           "category": "Architecture Deprecation",
           "title": "EXACT title string from input",
-          "type": "Deprecation, Breaking Change, or Security Update",
-          "product_impacted": "Push Card X-Pays, Secure Card Display, or Payment API",
+          "type": "Deprecation, Breaking Change, or Compliance",
+          "product_impacted": "specific product name",
           "status_or_date": "sunset date or None Specified",
-          "impact_summary": "1 sentence summary of card/payment impact",
+          "impact_summary": "1 sentence summary",
           "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
-          "backbase_rationale": "1 sentence on why Backbase does or does not need to act on payment card features"
+          "backbase_rationale": "1 sentence justification"
         }}
       ]
     }}
@@ -366,13 +222,12 @@ def enrich_alerts_with_urgency(alerts):
 
     return alerts
 
-
 # ==========================================
 # 4. STORAGE (CSV WITH AUTO-RESOLUTION)
 # ==========================================
 def save_alerts_to_file(alerts):
     """Updates existing alerts, auto-resolves vanished SRE incidents, or appends new ones."""
-    csv_filename = "watchdog_alerts.csv"
+    csv_filename = "watch_agent_alerts.csv"
     keys = [
         "logged_at",
         "vendor",
@@ -387,10 +242,10 @@ def save_alerts_to_file(alerts):
         "backbase_action_required",
         "backbase_rationale"
     ]
-
+    
     existing_records = {}
-    record_order = []
-
+    record_order = [] 
+    
     if os.path.exists(csv_filename):
         with open(csv_filename, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
@@ -399,15 +254,15 @@ def save_alerts_to_file(alerts):
                 if title:
                     existing_records[title] = row
                     record_order.append(title)
-
+                
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     incoming_titles = set()
-
+    
     # 1. Process active incoming alerts
     for alert in alerts:
         title = (alert.get('title') or 'N/A').strip()
         incoming_titles.add(title)
-
+        
         clean_alert = {
             "logged_at": timestamp,
             "vendor": VENDOR_NAME,
@@ -422,18 +277,20 @@ def save_alerts_to_file(alerts):
             "backbase_action_required": alert.get('backbase_action_required') or 'Assessment Needed',
             "backbase_rationale": alert.get('backbase_rationale') or 'AI could not determine rationale.'
         }
-
+        
         if title in existing_records:
+            # Update status/details while keeping original creation timestamp
             clean_alert['logged_at'] = existing_records[title].get('logged_at', timestamp)
             existing_records[title] = clean_alert
         else:
             existing_records[title] = clean_alert
             record_order.append(title)
 
-    # 2. AUTO-RESOLVE: Check for Entrust SRE incidents that disappeared from active feed
+    # 2. AUTO-RESOLVE: Check for Twilio SRE incidents that disappeared from the live feed
     auto_resolved_count = 0
     for title, row in existing_records.items():
         if row.get('vendor') == VENDOR_NAME and row.get('category') == 'SRE Incident':
+            # If the incident is no longer in active feed and isn't marked resolved yet:
             if title not in incoming_titles and row.get('status_or_date', '').lower() not in ['resolved', 'completed']:
                 row['status_or_date'] = 'Resolved'
                 auto_resolved_count += 1
@@ -454,19 +311,19 @@ def save_alerts_to_file(alerts):
 
     os.chmod(csv_filename, 0o600)
 
-    print(f"💾 Database synced! ({auto_resolved_count} {VENDOR_NAME} incident(s) auto-marked as 'Resolved')")
+    print(f"💾 Database synced! ({auto_resolved_count} incident(s) auto-marked as 'Resolved')")
 
 # ==========================================
 # 5. MAIN EXECUTION
 # ==========================================
 def main():
     print("==================================================")
-    print(f"🚨 AI VENDOR WATCHDOG: {VENDOR_NAME} SRE & ARCHITECTURE")
+    print(f"🚨 AI VENDOR WATCH AGENT: {VENDOR_NAME} SRE & ARCHITECTURE")
     print("==================================================\n")
 
     all_alerts = []
-    all_alerts.extend(analyze_status(fetch_entrust_status()))
-    all_alerts.extend(analyze_deprecations(fetch_entrust_changelog()))
+    all_alerts.extend(analyze_status(fetch_twilio_status()))
+    all_alerts.extend(analyze_deprecations(fetch_twilio_changelog()))
 
     # Enrich alerts with urgency/deadline information
     all_alerts = enrich_alerts_with_urgency(all_alerts)
