@@ -3,6 +3,7 @@ import urllib.request
 import json
 import os
 import csv
+import re
 from datetime import datetime
 from openai import OpenAI
 
@@ -103,25 +104,18 @@ def fetch_entrust_changelog():
     """
     print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs from Antelop support portal...")
 
-    # NOTE: Antelop Freshdesk support portal (Entrust) doesn't have RSS feeds enabled
-    # Must monitor manually or via web scraping
-    # Key resources:
-    # - https://antelop-support.freshdesk.com/en/support/solutions/ (main support portal)
-    # - Look for folders: SDK updates, Security, API changes, Important FAQs
-    # - Example articles: "Important FAQ - SDK Upgrade (Expiry Date...)"
-    #                    "TLS Leaf Certificate Renewal..."
+    entries_text = ""
 
+    # PRIMARY: Scrape Antelop support portal for deprecations and FAQs
+    entries_text += fetch_antelop_articles()
+
+    # FALLBACK: Try RSS feeds (in case Entrust enables them in future)
     changelog_feeds = [
-        # Antelop Support Portal feeds (if/when RSS becomes available)
-        ("Antelop Support - Solutions", "https://antelop-support.freshdesk.com/support/solutions/rss"),
-        # Fallback: Check for Entrust official documentation feeds
         ("Entrust Developer Docs", "https://docs.entrust.com/feed.xml"),
         ("Entrust Blog", "https://www.entrust.com/blog/feed/"),
     ]
 
-    entries_text = ""
     feeds_found = 0
-
     for platform, feed_url in changelog_feeds:
         try:
             feed = feedparser.parse(feed_url)
@@ -133,12 +127,10 @@ def fetch_entrust_changelog():
                     summary = entry.get('summary', '')
                     search_text = (entry.title + " " + summary + " " + content).lower()
 
-                    # Look for deprecation, breaking changes, security updates, and important FAQs
                     if any(keyword in search_text for keyword in [
                         "deprecat", "breaking", "removed", "sunset", "vulnerab", "security",
                         "upgrade required", "end of support", "end of life", "eol", "migration",
-                        "sdk upgrade", "expiry date", "expire", "no longer support", "important faq",
-                        "important notice", "breaking change", "api change", "card", "payment"
+                        "sdk upgrade", "expiry date", "expire", "important faq"
                     ]):
                         title_base = entry.title.strip()
                         title_clean = f"Entrust {platform} - {title_base}".replace('"', '\\"').replace('\\', '\\\\')
@@ -151,16 +143,67 @@ def fetch_entrust_changelog():
             continue
 
     if feeds_found == 0:
-        print(f"ℹ️ No {VENDOR_NAME} changelog feeds with RSS enabled.")
-        print(f"   📍 Antelop Support Portal (Entrust): https://antelop-support.freshdesk.com/en/support/solutions/")
-        print(f"   🔍 Monitor for articles about:")
-        print(f"      • SDK upgrades and expiry dates")
-        print(f"      • Certificate renewals (TLS, SSL)")
-        print(f"      • Breaking changes and deprecations")
-        print(f"      • Security vulnerabilities")
-        print(f"   📌 Example articles to watch for:")
-        print(f"      • 'Important FAQ - SDK Upgrade (Expiry Date Updated to 26 July)'")
-        print(f"      • 'TLS Leaf Certificate Renewal (EU PROD...)'")
+        print(f"✓ Scraped {len(entries_text.split('EXACT_TITLE:')) - 1} relevant articles from Antelop support portal")
+
+    return entries_text
+
+def fetch_antelop_articles():
+    """[ARCH] Scrapes Antelop support portal (Entrust) for deprecations and important FAQs.
+
+    Antelop is Entrust's Freshdesk support portal. This scraper extracts articles about:
+    - SDK upgrades and expiry dates
+    - TLS/SSL certificate changes and renewals
+    - Breaking changes and deprecations
+    - Important FAQs and security notices
+    """
+    print(f"📡 [ARCH] Scraping Antelop support portal for {VENDOR_NAME} deprecations...")
+
+    entries_text = ""
+    antelop_folder_url = "https://antelop-support.freshdesk.com/en/support/solutions/folders/44001203376"
+
+    try:
+        req = urllib.request.Request(
+            antelop_folder_url,
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            html = response.read().decode('utf-8', errors='ignore')
+
+        # Extract articles using regex pattern for Freshdesk article links
+        articles = re.findall(r'/en/support/solutions/articles/(\d+)-([^"\'<]+)', html)
+
+        if not articles:
+            print(f"   ⚠️ No articles found in Antelop folder")
+            return entries_text
+
+        print(f"   ✅ Found {len(articles)} articles in Antelop portal")
+
+        # Keywords to filter for deprecations and important updates
+        search_keywords = [
+            "deprecat", "breaking", "removed", "sunset", "vulnerab", "security",
+            "upgrade required", "end of support", "end of life", "eol", "migration",
+            "sdk upgrade", "expiry date", "expire", "important faq", "certificate",
+            "tls", "ssl", "renewal", "breaking change", "api change"
+        ]
+
+        for article_id, slug in articles:
+            # Convert slug to readable title
+            article_title = slug.replace('-', ' ').strip()
+            search_text = article_title.lower()
+
+            # Check if matches our search keywords
+            if any(keyword in search_text for keyword in search_keywords):
+                print(f"   🎯 [{article_id}] {article_title[:70]}")
+
+                title_clean = article_title.replace('"', '\\"').replace('\\', '\\\\')
+                url_clean = f"https://antelop-support.freshdesk.com/en/support/solutions/articles/{article_id}-{slug}".replace('"', '\\"')
+
+                entries_text += f"EXACT_TITLE: {title_clean}\nArticle ID: {article_id}\nURL: {url_clean}\n\n"
+
+    except urllib.error.URLError as e:
+        print(f"   ⚠️ Failed to reach Antelop portal: {type(e).__name__}")
+    except Exception as e:
+        print(f"   ⚠️ Error scraping Antelop: {type(e).__name__}")
 
     return entries_text
 
