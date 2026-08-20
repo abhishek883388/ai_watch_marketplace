@@ -87,34 +87,36 @@ def fetch_entrust_status():
     return entries_text
 
 def fetch_entrust_changelog():
-    """[ARCH] Fetches SDK updates and deprecations from Entrust documentation and support portals.
+    """[ARCH] Fetches SDK updates and deprecations from Entrust/Antelop support portal.
 
     Entrust publishes deprecations and breaking changes through:
-    - Official documentation: https://docs.entrust.com/
-    - Developer portal: https://developer.entrust.com/
-    - Support/Knowledge Base: Freshdesk or similar portals
-    - Release notes pages with RSS feeds
-    - Blog and announcements
+    - Antelop Support Portal (Freshdesk): https://antelop-support.freshdesk.com/
+      * Important FAQs about SDK upgrades and expiry dates
+      * Security announcements (TLS certificate renewals, vulnerabilities)
+      * Breaking changes and API deprecations
+      * End-of-support notices
+    - Official Entrust documentation
+    - Release notes and announcements
 
-    Searches for: SDK upgrades, expiry dates, deprecations, breaking changes,
-    end-of-life announcements, security updates, API changes.
+    Captures: SDK upgrades, expiry dates, certificate renewals, deprecations,
+    breaking changes, end-of-life announcements, security updates, API changes.
     """
-    print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs...")
+    print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs from Antelop support portal...")
 
-    # Try multiple sources for Entrust release information and deprecations
+    # NOTE: Antelop Freshdesk support portal (Entrust) doesn't have RSS feeds enabled
+    # Must monitor manually or via web scraping
+    # Key resources:
+    # - https://antelop-support.freshdesk.com/en/support/solutions/ (main support portal)
+    # - Look for folders: SDK updates, Security, API changes, Important FAQs
+    # - Example articles: "Important FAQ - SDK Upgrade (Expiry Date...)"
+    #                    "TLS Leaf Certificate Renewal..."
+
     changelog_feeds = [
-        # Support portal / Knowledge base (FAQ, important updates, deprecations)
-        # Freshdesk support portals typically have RSS feeds
-        ("Support Portal RSS", "https://entrust-support.freshdesk.com/support/solutions/rss"),
-        ("Support Portal - FAQ", "https://entrust-support.freshdesk.com/en/support/solutions/rss"),
-        ("Support Solutions", "https://entrust-support.freshdesk.com/support/solutions/articles/rss"),
-        # Official Entrust documentation feeds
-        ("Developer Docs", "https://docs.entrust.com/feed.xml"),
-        ("Release Notes", "https://www.entrust.com/release-notes/rss"),
-        # Blog
-        ("Blog", "https://www.entrust.com/blog/feed/"),
-        # GitHub public repos (if available)
-        ("GitHub - Mobile SDK", "https://github.com/Entrust/mobile-sdk/releases.atom"),
+        # Antelop Support Portal feeds (if/when RSS becomes available)
+        ("Antelop Support - Solutions", "https://antelop-support.freshdesk.com/support/solutions/rss"),
+        # Fallback: Check for Entrust official documentation feeds
+        ("Entrust Developer Docs", "https://docs.entrust.com/feed.xml"),
+        ("Entrust Blog", "https://www.entrust.com/blog/feed/"),
     ]
 
     entries_text = ""
@@ -149,13 +151,16 @@ def fetch_entrust_changelog():
             continue
 
     if feeds_found == 0:
-        print(f"ℹ️ No {VENDOR_NAME} changelog feeds currently accessible.")
-        print(f"   Manual sources to monitor for deprecations:")
-        print(f"   - https://entrust-support.freshdesk.com/ (Support portal - FAQs & important updates)")
-        print(f"   - https://docs.entrust.com/ (API documentation & release notes)")
-        print(f"   - https://developer.entrust.com/ (Developer portal)")
-        print(f"   - https://www.entrust.com/ (Press releases & announcements)")
-        print(f"   - Look for 'SDK upgrade', 'expiry date', 'deprecation' in support articles")
+        print(f"ℹ️ No {VENDOR_NAME} changelog feeds with RSS enabled.")
+        print(f"   📍 Antelop Support Portal (Entrust): https://antelop-support.freshdesk.com/en/support/solutions/")
+        print(f"   🔍 Monitor for articles about:")
+        print(f"      • SDK upgrades and expiry dates")
+        print(f"      • Certificate renewals (TLS, SSL)")
+        print(f"      • Breaking changes and deprecations")
+        print(f"      • Security vulnerabilities")
+        print(f"   📌 Example articles to watch for:")
+        print(f"      • 'Important FAQ - SDK Upgrade (Expiry Date Updated to 26 July)'")
+        print(f"      • 'TLS Leaf Certificate Renewal (EU PROD...)'")
 
     return entries_text
 
