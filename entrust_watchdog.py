@@ -89,34 +89,42 @@ def fetch_entrust_status():
 def fetch_entrust_changelog():
     """[ARCH] Fetches SDK updates and deprecations from Entrust documentation.
 
-    Entrust publishes updates through:
-    - GitHub repositories: github.com/Entrust/[sdk-repo]/releases.atom
-    - Developer portal: https://docs.entrust.com or https://developer.entrust.com
-    - Product announcements and release notes
+    NOTE: Entrust publishes release notes and API changes through:
+    - Official documentation: https://docs.entrust.com/
+    - Developer portal: https://developer.entrust.com/
+    - Release notes pages (check for RSS feeds)
+    - Support portal announcements
+
+    Public GitHub repos may not be available for all SDKs.
+    Monitor official Entrust channels for breaking changes and deprecations.
     """
     print(f"📡 [ARCH] Fetching latest {VENDOR_NAME} SDK changelogs...")
 
+    # Try multiple sources for Entrust release information
     changelog_feeds = [
-        ("Mobile SDK", "https://github.com/Entrust/mobile-sdk/releases.atom"),
-        ("Digital Card Solution", "https://github.com/Entrust/digital-card/releases.atom"),
-        ("Card APIs", "https://github.com/Entrust/card-api/releases.atom"),
+        # GitHub public repos (if available)
+        ("GitHub - Mobile SDK", "https://github.com/Entrust/mobile-sdk/releases.atom"),
+        # Official Entrust documentation feeds
+        ("Developer Docs", "https://docs.entrust.com/feed.xml"),
+        ("Release Notes", "https://www.entrust.com/release-notes/rss"),
     ]
 
     entries_text = ""
-    feeds_attempted = 0
+    feeds_found = 0
 
     for platform, feed_url in changelog_feeds:
         try:
             feed = feedparser.parse(feed_url)
 
             if feed.entries:
-                feeds_attempted += 1
+                feeds_found += 1
                 for entry in feed.entries[:5]:
                     content = entry.get('content', [{'value': ''}])[0].get('value', '') if entry.get('content') else ''
                     summary = entry.get('summary', '')
                     search_text = (entry.title + " " + summary + " " + content).lower()
 
-                    if any(keyword in search_text for keyword in ["sdk", "deprecation", "breaking", "removed", "sunset", "vulnerability", "security", "card", "x-pays", "payment"]):
+                    # Look for deprecation, breaking changes, security updates
+                    if any(keyword in search_text for keyword in ["deprecat", "breaking", "removed", "sunset", "vulnerab", "security", "breaking change", "upgrade required", "end of support", "migration", "card"]):
                         title_base = entry.title.strip()
                         title_clean = f"Entrust {platform} - {title_base}".replace('"', '\\"').replace('\\', '\\\\')
                         summary_clean = summary.replace('"', '\\"').replace('\\', '\\\\')
@@ -127,11 +135,13 @@ def fetch_entrust_changelog():
         except Exception:
             continue
 
-    if feeds_attempted == 0:
-        print(f"⚠️ Could not fetch {VENDOR_NAME} changelog data. Verify URLs:")
-        print(f"   - GitHub repos: https://github.com/Entrust/[repo-name]/releases.atom")
-        print(f"   - Developer portal: https://developer.entrust.com")
-        print(f"   - Official docs: https://www.entrust.com/documentation")
+    if feeds_found == 0:
+        print(f"ℹ️ No {VENDOR_NAME} changelog feeds currently accessible.")
+        print(f"   Manual sources to monitor:")
+        print(f"   - https://docs.entrust.com/ (API documentation)")
+        print(f"   - https://developer.entrust.com/ (Developer portal)")
+        print(f"   - https://www.entrust.com/ (Press releases & announcements)")
+        print(f"   - Check for RSS feeds on these pages and update fetch_entrust_changelog()")
 
     return entries_text
 
