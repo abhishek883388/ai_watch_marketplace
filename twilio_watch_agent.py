@@ -222,6 +222,49 @@ def enrich_alerts_with_urgency(alerts):
 
     return alerts
 
+def escalate_alerts_by_age(existing_records):
+    """Check Architecture items and escalate urgency/action based on days since reported.
+
+    Status progression:
+    - 0-7 days: "New" (NORMAL urgency)
+    - 8-14 days: "Aging" (WARNING urgency)
+    - 15-30 days: "Pending" (CRITICAL urgency)
+    - 30+ days: "Overdue" (OVERDUE urgency, immediate action)
+    """
+    now = datetime.now()
+
+    for title, row in existing_records.items():
+        if row.get('category') == 'Architecture Deprecation':
+            try:
+                logged_at_str = row.get('logged_at', '')
+                logged_at = datetime.strptime(logged_at_str, "%Y-%m-%d %H:%M:%S")
+                days_elapsed = (now - logged_at).days
+                row['age_days'] = days_elapsed
+
+                # Set age status and escalate urgency/action
+                if days_elapsed <= 7:
+                    row['age_status'] = 'New'
+                    if row.get('urgency_level') == 'NORMAL':
+                        row['backbase_action_required'] = 'Assessment Needed'
+                elif days_elapsed <= 14:
+                    row['age_status'] = 'Aging'
+                    row['urgency_level'] = 'WARNING'
+                    row['backbase_action_required'] = 'Code Migration Required'
+                    print(f"⚠️  AGING (8-14 days): {title}")
+                elif days_elapsed <= 30:
+                    row['age_status'] = 'Pending'
+                    row['urgency_level'] = 'CRITICAL'
+                    row['backbase_action_required'] = 'CRITICAL - Immediate Action'
+                    print(f"⚠️  CRITICAL (15-30 days): {title}")
+                else:
+                    row['age_status'] = 'Overdue'
+                    row['urgency_level'] = 'OVERDUE'
+                    row['backbase_action_required'] = 'OVERDUE - Action Required'
+                    print(f"🚨 OVERDUE (30+ days): {title}")
+            except (ValueError, TypeError):
+                row['age_days'] = 'N/A'
+                row['age_status'] = 'Unknown'
+
 # ==========================================
 # 4. STORAGE (CSV WITH AUTO-RESOLUTION)
 # ==========================================
@@ -233,6 +276,8 @@ def save_alerts_to_file(alerts):
         "vendor",
         "category",
         "urgency_level",
+        "age_status",
+        "age_days",
         "deadline_date",
         "title",
         "product_impacted",
@@ -242,10 +287,10 @@ def save_alerts_to_file(alerts):
         "backbase_action_required",
         "backbase_rationale"
     ]
-    
+
     existing_records = {}
-    record_order = [] 
-    
+    record_order = []
+
     if os.path.exists(csv_filename):
         with open(csv_filename, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
@@ -254,20 +299,25 @@ def save_alerts_to_file(alerts):
                 if title:
                     existing_records[title] = row
                     record_order.append(title)
+
+    # Escalate Architecture items based on age since reported
+    escalate_alerts_by_age(existing_records)
                 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     incoming_titles = set()
-    
+
     # 1. Process active incoming alerts
     for alert in alerts:
         title = (alert.get('title') or 'N/A').strip()
         incoming_titles.add(title)
-        
+
         clean_alert = {
             "logged_at": timestamp,
             "vendor": VENDOR_NAME,
             "category": alert.get('category') or 'SRE Incident',
             "urgency_level": alert.get('urgency_level') or 'NORMAL',
+            "age_status": 'New',
+            "age_days": '0',
             "deadline_date": alert.get('deadline_date') or 'N/A',
             "title": title,
             "product_impacted": alert.get('product_impacted') or 'Unspecified',
@@ -277,10 +327,15 @@ def save_alerts_to_file(alerts):
             "backbase_action_required": alert.get('backbase_action_required') or 'Assessment Needed',
             "backbase_rationale": alert.get('backbase_rationale') or 'AI could not determine rationale.'
         }
-        
+
         if title in existing_records:
             # Update status/details while keeping original creation timestamp
             clean_alert['logged_at'] = existing_records[title].get('logged_at', timestamp)
+            # Preserve age fields if they exist
+            if 'age_status' in existing_records[title]:
+                clean_alert['age_status'] = existing_records[title].get('age_status', 'New')
+            if 'age_days' in existing_records[title]:
+                clean_alert['age_days'] = existing_records[title].get('age_days', '0')
             existing_records[title] = clean_alert
         else:
             existing_records[title] = clean_alert
