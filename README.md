@@ -66,6 +66,7 @@ Powered by **OpenAI API** (via Groq endpoint), it transforms unstructured status
 * **100% Serverless Execution:** Scheduled to run automatically every hour via **GitHub Actions** workflows without needing external hosting infrastructure.
 * **Persistent Deduplication:** Features a smart CSV reading engine that prevents repeated incident logging across hourly runs by matching vendor + title, while preserving full historical audit trail.
 * **Automated Data Sanitation:** Intercepts `null`, empty, or missing LLM key values prior to database write, eliminating broken dashboard filters.
+* **Historical Incident Archival:** Automatically captures resolved incidents from the past 60 days with duration metrics and impact summaries in a separate CSV for trend analysis and incident post-mortems.
 * **Vendor-Specific Service Filtering:**
   - **Twilio:** Programmable Messaging, SMS, Short Codes, SendGrid, Sender ID, Programmable Chat
   - **Jumio:** Identity Verification (all variants), PerformNetVerify API, Doc Proof, Liveness
@@ -73,7 +74,9 @@ Powered by **OpenAI API** (via Groq endpoint), it transforms unstructured status
 
 ---
 
-## 📊 Database Schema (`watch_agent_alerts.csv`)
+## 📊 Database Schemas
+
+### Active Alerts (`watch_agent_alerts.csv`)
 
 | Column Name | Type | Description | Example Value |
 | --- | --- | --- | --- |
@@ -87,6 +90,22 @@ Powered by **OpenAI API** (via Groq endpoint), it transforms unstructured status
 | `impact_summary` | String | One-sentence issue breakdown | `SMS delivery is experiencing delays for T-Mobile network subscribers in Germany.` |
 | `backbase_action_required` | String | Required engineering/ops response | `OVERDUE - Action Required` / `Immediate Action` / `Monitor` / `Code Migration Required` / `Assessment Needed` |
 | `backbase_rationale` | String | AI-generated rationale for Backbase | `The issue is being monitored and no immediate action is required.` |
+
+### Historical Resolved Incidents (`watch_agent_resolved_incidents.csv`)
+
+Automatically archival of resolved incidents from the **past 60 days**, regenerated hourly:
+
+| Column Name | Type | Description |
+| --- | --- | --- |
+| `vendor` | String | Vendor source (Twilio, Jumio, Entrust) |
+| `title` | String | Incident title |
+| `affected_services` | String | Impacted services or components |
+| `created_at` | Timestamp | Incident creation time |
+| `resolved_at` | Timestamp | Incident resolution time |
+| `duration_hours` | Float | Total incident duration in hours |
+| `status` | String | Final status (typically "resolved") |
+| `impact_summary` | String | Brief description of impact |
+| `incident_type` | String | Type classification (Outage, Incident, etc.) |
 
 ---
 
@@ -145,13 +164,21 @@ The headless runner is defined in `.github/workflows/watch_agent_cron.yml`. It r
 
 ### Workflow Execution
 
-Each hourly run executes in parallel:
-- `twilio_watch_agent.py` - Fetches Twilio incidents & changelogs
-- `jumio_watch_agent.py` - Fetches Jumio monitor incidents & changelogs
-- `entrust_watch_agent.py` - Fetches Entrust DCS incidents & updates
-- Deadline/urgency detection across all vendors
-- Deduplication and CSV database write
-- Auto-commit & push of `watch_agent_alerts.csv` to repository
+Each hourly run executes:
+1. **Watch Agent Scripts** (in parallel):
+   - `twilio_watch_agent.py` - Fetches Twilio incidents & changelogs
+   - `jumio_watch_agent.py` - Fetches Jumio monitor incidents & changelogs
+   - `entrust_watch_agent.py` - Fetches Entrust DCS incidents & updates
+   - Deadline/urgency detection across all vendors
+   - Deduplication and CSV database write
+
+2. **Historical Archival**:
+   - `fetch_resolved_incidents.py` - Archives resolved incidents from past 60 days
+   - Calculates incident duration and impact metrics
+   - Updates `watch_agent_resolved_incidents.csv`
+
+3. **Data Persistence**:
+   - Auto-commit & push of both CSV files to repository
 
 ### Repository Configuration
 
@@ -200,17 +227,19 @@ The data automatically refreshes every hour as new watch agent runs complete and
 
 ```
 ai_watch_marketplace/
-├── twilio_watch_agent.py       # Twilio SRE & architecture monitor
-├── jumio_watch_agent.py        # Jumio SRE & architecture monitor
-├── entrust_watch_agent.py      # Entrust SRE & architecture monitor
-├── deadline_checker.py         # Deadline extraction & urgency tracking utility
-├── dashboard.py                # Streamlit monitoring dashboard
-├── watch_agent_alerts.csv      # Master alert database (auto-updated hourly)
-├── watch_agent_alerts.json     # JSON backup of alerts
-├── requirements.txt            # Python dependencies
-├── README.md                   # This file
+├── twilio_watch_agent.py              # Twilio SRE & architecture monitor
+├── jumio_watch_agent.py               # Jumio SRE & architecture monitor
+├── entrust_watch_agent.py             # Entrust SRE & architecture monitor
+├── deadline_checker.py                # Deadline extraction & urgency tracking utility
+├── fetch_resolved_incidents.py        # Historical resolved incidents archival (past 60 days)
+├── dashboard.py                       # Streamlit monitoring dashboard
+├── watch_agent_alerts.csv             # Master alert database (auto-updated hourly)
+├── watch_agent_alerts.json            # JSON backup of alerts
+├── watch_agent_resolved_incidents.csv # Historical resolved incidents (auto-updated hourly)
+├── requirements.txt                   # Python dependencies
+├── README.md                          # This file
 └── .github/workflows/
-    └── watch_agent_cron.yml    # GitHub Actions hourly trigger
+    └── watch_agent_cron.yml           # GitHub Actions hourly trigger
 ```
 
 ---

@@ -31,7 +31,7 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
         
-      - name: Execute Watchdog Scripts
+      - name: Execute Watch Agent Scripts
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
@@ -39,11 +39,14 @@ jobs:
           python jumio_watch_agent.py
           python entrust_watch_agent.py
 
+      - name: Fetch Resolved Incidents Archive
+        run: python fetch_resolved_incidents.py
+
       # --- COMMIT DATA BACK TO GITHUB DATABASE ---
-      - name: Commit and Push Database Update
+      - name: Commit and Push Database Updates
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add watch_agent_alerts.csv
+          git add watch_agent_alerts.csv watch_agent_resolved_incidents.csv
           git commit -m "Automated SRE database update [skip ci]" || exit 0
           git push
