@@ -63,6 +63,11 @@ Powered by **OpenAI API** (via Groq endpoint), it transforms unstructured status
 * **Multi-Vendor Monitoring:** Simultaneously monitors **three critical vendors** (Twilio, Jumio, Entrust) with vendor-specific service filters and intelligence engines.
 * **Backbase Actionability Analysis:** Evaluates every incident against internal Backbase operations, automatically assigning action statuses (`OVERDUE - Action Required`, `Immediate Action`, `Code Migration Required`, `Monitor`, `Assessment Needed`, `No Action`) alongside concise AI-generated justifications.
 * **Deadline & Urgency Tracking:** Automatically detects and extracts deadlines from status updates, categorizing them by urgency (OVERDUE, URGENT, UPCOMING, LOW PRIORITY) with countdown timers.
+* **Age-Based Escalation:** Automatically escalates urgency and action requirements for Architecture Deprecation items based on how long they've been in the system:
+  - **New (0-7 days):** NORMAL urgency, Assessment Needed
+  - **Aging (8-14 days):** WARNING urgency, Code Migration Required
+  - **Pending (15-30 days):** CRITICAL urgency, Immediate Action
+  - **Overdue (30+ days):** OVERDUE urgency, Action Required
 * **100% Serverless Execution:** Scheduled to run automatically every hour via **GitHub Actions** workflows without needing external hosting infrastructure.
 * **Persistent Deduplication:** Features a smart CSV reading engine that prevents repeated incident logging across hourly runs by matching vendor + title, while preserving full historical audit trail.
 * **Automated Data Sanitation:** Intercepts `null`, empty, or missing LLM key values prior to database write, eliminating broken dashboard filters.
@@ -83,12 +88,16 @@ Powered by **OpenAI API** (via Groq endpoint), it transforms unstructured status
 | `logged_at` | Timestamp | Date/time incident was logged by Watch Agent | `2026-08-18 18:23:02` |
 | `vendor` | String | Vendor source | `Twilio` / `Jumio` / `Entrust` |
 | `category` | String | System classification category | `SRE Incident` / `Architecture Deprecation` |
+| `urgency_level` | String | Calculated urgency based on deadline or age | `OVERDUE` / `CRITICAL` / `WARNING` / `NORMAL` |
+| `age_status` | String | Age-based escalation status (Architecture Deprecation only) | `New` / `Aging` / `Pending` / `Overdue` / `Unknown` |
+| `age_days` | Integer | Days elapsed since alert was first logged | `0` / `10` / `25` / `45` / `N/A` |
+| `deadline_date` | String | Extracted deadline or sunset date if present | `2026-10-01` / `2024-07-26` / `N/A` |
 | `title` | String | Heading of the vendor notice | `SMS Delivery Delays from Twilio to T-Mobile Germany` |
 | `product_impacted` | String | Specific vendor product impacted | `Twilio SMS` / `Jumio Android SDK` / `Entrust Digital Card` |
 | `type` | String | Issue behavior classification | `Delays` / `Breaking Change` / `Compliance` / `Outage` |
 | `status_or_date` | String | Current vendor status or sunset/deadline date | `Resolved` / `2026-10-01` / `None Specified` |
 | `impact_summary` | String | One-sentence issue breakdown | `SMS delivery is experiencing delays for T-Mobile network subscribers in Germany.` |
-| `backbase_action_required` | String | Required engineering/ops response | `OVERDUE - Action Required` / `Immediate Action` / `Monitor` / `Code Migration Required` / `Assessment Needed` |
+| `backbase_action_required` | String | Required engineering/ops response (may be escalated by age) | `OVERDUE - Action Required` / `CRITICAL - Immediate Action` / `Code Migration Required` / `Monitor` / `Assessment Needed` |
 | `backbase_rationale` | String | AI-generated rationale for Backbase | `The issue is being monitored and no immediate action is required.` |
 
 ### Historical Resolved Incidents (`watch_agent_resolved_incidents.csv`)
@@ -106,6 +115,61 @@ Automatically archival of resolved incidents from the **past 60 days**, regenera
 | `status` | String | Final status (typically "resolved") |
 | `impact_summary` | String | Brief description of impact |
 | `incident_type` | String | Type classification (Outage, Incident, etc.) |
+
+---
+
+## ⏰ Age-Based Escalation Logic
+
+The Watch Agent automatically escalates the urgency and action requirements of **Architecture Deprecation** items based on how long they've been tracked in the system. This ensures that aging deprecations receive increasing attention over time.
+
+### Escalation Timeline
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Architecture Deprecation Age Progression                    │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ 0-7 DAYS: New                                              │
+│ └─ age_status: "New"                                       │
+│ └─ urgency_level: NORMAL                                   │
+│ └─ action: Assessment Needed                               │
+│                                                             │
+│ 8-14 DAYS: Aging (⚠️ WARNING)                             │
+│ └─ age_status: "Aging"                                     │
+│ └─ urgency_level: WARNING (escalated)                      │
+│ └─ action: Code Migration Required (escalated)             │
+│ └─ console: "⚠️ AGING (8-14 days): [title]"               │
+│                                                             │
+│ 15-30 DAYS: Pending (🚨 CRITICAL)                         │
+│ └─ age_status: "Pending"                                   │
+│ └─ urgency_level: CRITICAL (escalated)                     │
+│ └─ action: CRITICAL - Immediate Action (escalated)         │
+│ └─ console: "⚠️ CRITICAL (15-30 days): [title]"           │
+│                                                             │
+│ 30+ DAYS: Overdue (🚨 OVERDUE)                            │
+│ └─ age_status: "Overdue"                                   │
+│ └─ urgency_level: OVERDUE (escalated)                      │
+│ └─ action: OVERDUE - Action Required (escalated)           │
+│ └─ console: "🚨 OVERDUE (30+ days): [title]"              │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Behaviors
+
+- **SRE Incidents are excluded:** Age escalation only applies to Architecture Deprecation items, not active SRE incidents
+- **Age calculation:** Days elapsed since `logged_at` timestamp using system clock
+- **Automatic escalation:** Happens on every agent run; items progressively escalate as days pass
+- **Error handling:** Invalid dates result in `age_status: "Unknown"` and `age_days: "N/A"`
+- **Preserved across runs:** Age status is preserved in subsequent runs; new items start at "New"
+
+### Use Cases
+
+This escalation pattern ensures:
+1. **New deprecations** start with low priority (Assessment Needed)
+2. **Aging deprecations** (1-2 weeks) trigger code review discussions (WARNING)
+3. **Pending deprecations** (2-4 weeks) escalate to critical action (CRITICAL)
+4. **Overdue deprecations** (1+ month) demand immediate remediation (OVERDUE)
 
 ---
 
@@ -170,6 +234,7 @@ Each hourly run executes:
    - `jumio_watch_agent.py` - Fetches Jumio monitor incidents & changelogs
    - `entrust_watch_agent.py` - Fetches Entrust DCS incidents & updates
    - Deadline/urgency detection across all vendors
+   - Age-based escalation for Architecture Deprecation items
    - Deduplication and CSV database write
 
 2. **Historical Archival**:
@@ -270,10 +335,19 @@ Each watch agent script follows this analysis flow:
   - **UPCOMING:** 7-30 days to deadline
   - **LOW PRIORITY:** > 30 days or no deadline
 
-### 4. **Deduplication & Storage**
+### 4. **Age-Based Escalation**
+- Calculates days elapsed since Architecture Deprecation items were first logged
+- Automatically escalates urgency levels and action requirements based on age:
+  - **0-7 days:** New (NORMAL) → Assessment Needed
+  - **8-14 days:** Aging (WARNING) → Code Migration Required
+  - **15-30 days:** Pending (CRITICAL) → Immediate Action
+  - **30+ days:** Overdue (OVERDUE) → Action Required
+- SRE incidents are excluded from age escalation
+
+### 5. **Deduplication & Storage**
 - Checks `watch_agent_alerts.csv` for duplicates (vendor + title match)
 - Appends new alerts with full audit trail
-- Preserves historical records
+- Preserves historical records with age tracking
 
 ---
 
