@@ -49,6 +49,7 @@ def fetch_twilio_status():
     entries_text = ""
     for incident in data.get("incidents", []):
         incident_name = incident.get('name', '').strip()
+        incident_url = incident.get('shortlink', '')
         components = incident.get('components', [])
         affected_names = [c.get('name', '').lower() for c in components]
         search_text = (incident_name.lower() + " " + " ".join(affected_names))
@@ -58,6 +59,9 @@ def fetch_twilio_status():
             name_clean = incident_name.replace('"', '\\"').replace('\\', '\\\\')
             status_clean = str(incident.get('status', '')).replace('"', '\\"').replace('\\', '\\\\')
             entries_text += f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
+            if incident_url:
+                url_clean = incident_url.replace('"', '\\"').replace('\\', '\\\\')
+                entries_text += f"Link: {url_clean}\n"
             if incident.get("incident_updates"):
                 body_clean = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
                 entries_text += f"Summary: {body_clean}\n\n"
@@ -77,7 +81,12 @@ def fetch_twilio_changelog():
             title_clean = entry.title.replace('"', '\\"').replace('\\', '\\\\')
             date_clean = entry.published.replace('"', '\\"').replace('\\', '\\\\')
             summary_clean = entry.summary.replace('"', '\\"').replace('\\', '\\\\')
-            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+            link = entry.get('link', '')
+            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\n"
+            if link:
+                link_clean = link.replace('"', '\\"').replace('\\', '\\\\')
+                entries_text += f"Link: {link_clean}\n"
+            entries_text += f"Summary: {summary_clean}\n\n"
 
     return entries_text
 
@@ -103,6 +112,7 @@ def analyze_status(status_text):
           "product_impacted": "specific product name",
           "status_or_date": "Investigating, Identified, or Monitoring",
           "impact_summary": "1 sentence summary",
+          "incident_url": "URL from input",
           "backbase_action_required": "Immediate Action, Monitor, or No Action",
           "backbase_rationale": "1 sentence justification"
         }}
@@ -142,6 +152,7 @@ def analyze_deprecations(changelog_text):
           "product_impacted": "specific product name",
           "status_or_date": "sunset date or None Specified",
           "impact_summary": "1 sentence summary",
+          "incident_url": "URL from input",
           "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
           "backbase_rationale": "1 sentence justification"
         }}
@@ -284,6 +295,7 @@ def save_alerts_to_file(alerts):
         "type",
         "status_or_date",
         "impact_summary",
+        "incident_url",
         "backbase_action_required",
         "backbase_rationale"
     ]
@@ -324,6 +336,7 @@ def save_alerts_to_file(alerts):
             "type": alert.get('type') or 'N/A',
             "status_or_date": alert.get('status_or_date') or 'N/A',
             "impact_summary": alert.get('impact_summary') or 'N/A',
+            "incident_url": alert.get('incident_url') or '',
             "backbase_action_required": alert.get('backbase_action_required') or 'Assessment Needed',
             "backbase_rationale": alert.get('backbase_rationale') or 'AI could not determine rationale.'
         }

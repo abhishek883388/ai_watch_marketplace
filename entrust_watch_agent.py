@@ -61,6 +61,7 @@ def fetch_entrust_status():
         for incident in incidents:
             incident_name = incident.get('name', '').strip()
             status = incident.get('status', '').lower()
+            incident_url = incident.get('shortlink', '')
 
             # Only include unresolved incidents
             if status in ['resolved', 'completed', 'postmortem']:
@@ -75,6 +76,10 @@ def fetch_entrust_status():
                 name_clean = incident_name.replace('"', '\\"').replace('\\', '\\\\')
                 status_clean = status.replace('"', '\\"').replace('\\', '\\\\')
                 entries_text += f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
+
+                if incident_url:
+                    url_clean = incident_url.replace('"', '\\"').replace('\\', '\\\\')
+                    entries_text += f"Link: {url_clean}\n"
 
                 if incident.get("incident_updates"):
                     update_body = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
@@ -137,8 +142,13 @@ def fetch_entrust_changelog():
                         title_clean = f"Entrust {platform} - {title_base}".replace('"', '\\"').replace('\\', '\\\\')
                         summary_clean = summary.replace('"', '\\"').replace('\\', '\\\\')
                         date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
+                        link = entry.get('link', '')
 
-                        entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+                        entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\n"
+                        if link:
+                            link_clean = link.replace('"', '\\"').replace('\\', '\\\\')
+                            entries_text += f"Link: {link_clean}\n"
+                        entries_text += f"Summary: {summary_clean}\n\n"
 
         except Exception:
             continue
@@ -238,6 +248,7 @@ def analyze_status(status_text):
           "product_impacted": "Push Card X-Pays or Secure Card Display",
           "status_or_date": "Investigating, Identified, or Monitoring",
           "impact_summary": "1 sentence summary of how payment card features are impacted",
+          "incident_url": "URL from input",
           "backbase_action_required": "Immediate Action, Monitor, or No Action",
           "backbase_rationale": "1 sentence on payment/card security implications"
         }}
@@ -286,6 +297,7 @@ def analyze_deprecations(changelog_text):
           "product_impacted": "Push Card X-Pays, Secure Card Display, or Payment API",
           "status_or_date": "sunset date or None Specified",
           "impact_summary": "1 sentence summary of card/payment impact",
+          "incident_url": "URL from input",
           "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
           "backbase_rationale": "1 sentence on why Backbase does or does not need to act on payment card features"
         }}
@@ -429,6 +441,7 @@ def save_alerts_to_file(alerts):
         "type",
         "status_or_date",
         "impact_summary",
+        "incident_url",
         "backbase_action_required",
         "backbase_rationale"
     ]
@@ -461,18 +474,25 @@ def save_alerts_to_file(alerts):
             "vendor": VENDOR_NAME,
             "category": alert.get('category') or 'SRE Incident',
             "urgency_level": alert.get('urgency_level') or 'NORMAL',
+            "age_status": 'New',
+            "age_days": '0',
             "deadline_date": alert.get('deadline_date') or 'N/A',
             "title": title,
             "product_impacted": alert.get('product_impacted') or 'Unspecified',
             "type": alert.get('type') or 'N/A',
             "status_or_date": alert.get('status_or_date') or 'N/A',
             "impact_summary": alert.get('impact_summary') or 'N/A',
+            "incident_url": alert.get('incident_url') or '',
             "backbase_action_required": alert.get('backbase_action_required') or 'Assessment Needed',
             "backbase_rationale": alert.get('backbase_rationale') or 'AI could not determine rationale.'
         }
 
         if title in existing_records:
             clean_alert['logged_at'] = existing_records[title].get('logged_at', timestamp)
+            if 'age_status' in existing_records[title]:
+                clean_alert['age_status'] = existing_records[title].get('age_status', 'New')
+            if 'age_days' in existing_records[title]:
+                clean_alert['age_days'] = existing_records[title].get('age_days', '0')
             existing_records[title] = clean_alert
         else:
             existing_records[title] = clean_alert

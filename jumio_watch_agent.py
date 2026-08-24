@@ -51,8 +51,13 @@ def fetch_jumio_status():
             title_clean = entry.title.strip().replace('"', '\\"').replace('\\', '\\\\')
             summary_clean = entry.get('summary', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
             date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
+            link = entry.get('link', '')
             print(f"🎯 [{VENDOR_NAME} SRE Match]: {entry.title.strip()}")
-            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\n"
+            if link:
+                link_clean = link.replace('"', '\\"').replace('\\', '\\\\')
+                entries_text += f"Link: {link_clean}\n"
+            entries_text += f"Summary: {summary_clean}\n\n"
 
     return entries_text
     
@@ -79,8 +84,13 @@ def fetch_jumio_changelog():
                 title_clean = f"Jumio {platform} v{raw_version}".replace('"', '\\"').replace('\\', '\\\\')
                 summary_clean = summary.replace('"', '\\"').replace('\\', '\\\\')
                 date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
+                link = entry.get('link', '')
 
-                entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+                entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\n"
+                if link:
+                    link_clean = link.replace('"', '\\"').replace('\\', '\\\\')
+                    entries_text += f"Link: {link_clean}\n"
+                entries_text += f"Summary: {summary_clean}\n\n"
 
     return entries_text
 
@@ -112,6 +122,7 @@ Rules:
       "product_impacted": "Identity Verification",
       "status_or_date": "Investigating",
       "impact_summary": "One sentence summary of outage.",
+      "incident_url": "URL from input",
       "backbase_action_required": "Monitor",
       "backbase_rationale": "One sentence explaining impact on customer onboarding."
     }}
@@ -156,6 +167,7 @@ def analyze_deprecations(changelog_text):
           "product_impacted": "specific product name",
           "status_or_date": "sunset date or None Specified",
           "impact_summary": "1 sentence summary",
+          "incident_url": "URL from input",
           "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
           "backbase_rationale": "1 sentence explaining why Backbase does or does not need to act on the SDK or API."
         }}
@@ -299,6 +311,7 @@ def save_alerts_to_file(alerts):
         "type",
         "status_or_date",
         "impact_summary",
+        "incident_url",
         "backbase_action_required",
         "backbase_rationale"
     ]
@@ -331,18 +344,25 @@ def save_alerts_to_file(alerts):
             "vendor": VENDOR_NAME,
             "category": alert.get('category') or 'SRE Incident',
             "urgency_level": alert.get('urgency_level') or 'NORMAL',
+            "age_status": 'New',
+            "age_days": '0',
             "deadline_date": alert.get('deadline_date') or 'N/A',
             "title": title,
             "product_impacted": alert.get('product_impacted') or 'Unspecified',
             "type": alert.get('type') or 'N/A',
             "status_or_date": alert.get('status_or_date') or 'N/A',
             "impact_summary": alert.get('impact_summary') or 'N/A',
+            "incident_url": alert.get('incident_url') or '',
             "backbase_action_required": alert.get('backbase_action_required') or 'Assessment Needed',
             "backbase_rationale": alert.get('backbase_rationale') or 'AI could not determine rationale.'
         }
-        
+
         if title in existing_records:
             clean_alert['logged_at'] = existing_records[title].get('logged_at', timestamp)
+            if 'age_status' in existing_records[title]:
+                clean_alert['age_status'] = existing_records[title].get('age_status', 'New')
+            if 'age_days' in existing_records[title]:
+                clean_alert['age_days'] = existing_records[title].get('age_days', '0')
             existing_records[title] = clean_alert
         else:
             existing_records[title] = clean_alert
