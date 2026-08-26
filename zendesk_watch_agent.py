@@ -34,10 +34,10 @@ ZENDESK_EMAIL = os.getenv('ZENDESK_EMAIL')
 ZENDESK_API_TOKEN = os.getenv('ZENDESK_API_TOKEN')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
-# Vendor and alert keywords
-VENDOR_KEYWORDS = {
-    "twilio": ["twilio", "sms", "messaging", "sendgrid"],
-    "entrust": ["entrust", "card", "payment", "x-pays", "ssl"],
+# Monitored vendors - STRICT filtering for only these vendors
+MONITORED_VENDORS = {
+    "twilio": ["twilio", "sendgrid", "sms", "messaging"],
+    "entrust": ["entrust", "card", "payment", "x-pays", "ssl", "certificate"],
     "jumio": ["jumio", "kyc", "identity", "verification"],
 }
 
@@ -48,6 +48,9 @@ ALERT_KEYWORDS = [
     "deadline", "expires", "expiry", "urgent",
     "critical", "action required", "api change"
 ]
+
+# Track rejected vendors for logging
+rejected_vendors = set()
 
 OUTPUT_FILE = "zendesk_watch_agent_alerts.csv"
 CSV_COLUMNS = [
@@ -138,9 +141,9 @@ def fetch_zendesk_tickets() -> List[Dict]:
 
 
 def contains_vendor_keyword(text: str) -> Optional[str]:
-    """Check if text contains vendor keywords. Returns vendor name or None."""
+    """Check if text contains MONITORED vendor keywords. Returns vendor name or None."""
     text_lower = text.lower()
-    for vendor, keywords in VENDOR_KEYWORDS.items():
+    for vendor, keywords in MONITORED_VENDORS.items():
         for keyword in keywords:
             if keyword in text_lower:
                 return vendor
@@ -153,24 +156,67 @@ def contains_alert_keyword(text: str) -> bool:
     return any(keyword in text_lower for keyword in ALERT_KEYWORDS)
 
 
-def filter_vendor_alert_tickets(tickets: List[Dict]) -> List[Dict]:
-    """Filter tickets matching both vendor and alert keywords."""
+def detect_any_vendor(text: str) -> Optional[str]:
+    """Detect ANY vendor keyword (monitored or not) for tracking rejected vendors."""
+    text_lower = text.lower()
+    common_vendors = {
+        "docusign": ["docusign", "esignature"],
+        "codat": ["codat", "accounting", "erp"],
+        "atomic": ["atomic", "kyb"],
+        "biocatch": ["biocatch", "fraud"],
+        "jack henry": ["jack henry", "jha"],
+        "bankcard": ["bankcard", "visa", "mastercard"],
+    }
+
+    for vendor, keywords in common_vendors.items():
+        for keyword in keywords:
+            if keyword in text_lower:
+                return vendor
+
+    return None
+
+
+def filter_vendor_alert_tickets(tickets: List[Dict]) -> Tuple[List[Dict], Dict]:
+    """Filter tickets matching both monitored vendor and alert keywords.
+    Returns (filtered_tickets, stats) where stats contains filtering details."""
     filtered = []
+    monitored_vendor_matches = 0
+    alert_keyword_matches = 0
+    local_rejected_vendors = set()
 
     for ticket in tickets:
         subject = ticket.get('subject', '')
         description = ticket.get('description', '')
         combined_text = f"{subject} {description}"
 
-        vendor = contains_vendor_keyword(combined_text)
+        monitored_vendor = contains_vendor_keyword(combined_text)
         has_alert = contains_alert_keyword(combined_text)
+        any_vendor = detect_any_vendor(combined_text)
 
-        if vendor and has_alert:
-            ticket['detected_vendor'] = vendor
+        # Track monitored vendor matches
+        if monitored_vendor:
+            monitored_vendor_matches += 1
+
+        # Track alert keyword matches
+        if has_alert:
+            alert_keyword_matches += 1
+
+        # Track rejected vendors (any vendor that's not monitored)
+        if any_vendor and not monitored_vendor:
+            local_rejected_vendors.add(any_vendor)
+
+        # Only include if BOTH conditions met: monitored vendor AND alert keyword
+        if monitored_vendor and has_alert:
+            ticket['detected_vendor'] = monitored_vendor
             filtered.append(ticket)
 
-    logger.info(f"📋 {len(filtered)} tickets match both vendor and alert keywords")
-    return filtered
+    stats = {
+        'monitored_vendor_matches': monitored_vendor_matches,
+        'alert_keyword_matches': alert_keyword_matches,
+        'rejected_vendors': sorted(list(local_rejected_vendors))
+    }
+
+    return filtered, stats
 
 
 def extract_deadline_from_text(text: str) -> Optional[str]:
@@ -426,10 +472,25 @@ def main():
         logger.warning("⚠️  No tickets found in the past 3 months")
         return
 
-    # Filter for vendor alerts
-    vendor_tickets = filter_vendor_alert_tickets(tickets)
-    if not vendor_tickets:
-        logger.info("ℹ️  No vendor alert tickets found in past 3 months")
+    # Filter for monitored vendor alerts with strict filtering
+    vendor_tickets, filter_stats = filter_vendor_alert_tickets(tickets)
+
+    # Log filtering statistics
+    monitored_count = filter_stats['monitored_vendor_matches']
+    alert_count = filter_stats['alert_keyword_matches']
+    rejected = filter_stats['rejected_vendors']
+
+    if vendor_tickets:
+        rejected_str = f"Rejected: {', '.join(rejected)}" if rejected else "No rejected vendors"
+        logger.info(
+            f"✅ {len(tickets)} tickets. {monitored_count} match monitored vendors. "
+            f"{alert_count} have alert keywords. Extracted {len(vendor_tickets)} alerts. "
+            f"{rejected_str}"
+        )
+    else:
+        logger.info("ℹ️  No vendor alert tickets found in past 3 months (strict monitoring)")
+        if rejected:
+            logger.info(f"Found tickets from non-monitored vendors: {', '.join(rejected)}")
         return
 
     # Load existing alerts to avoid duplicates
@@ -454,8 +515,7 @@ def main():
 
     # Final summary
     logger.info(
-        f"✅ Past 3 months: {len(tickets)} tickets queried. "
-        f"{len(vendor_tickets)} match vendors. "
+        f"✅ Processing complete: {len(vendor_tickets)} monitored vendor alerts. "
         f"{len(new_alerts)} new alerts extracted."
     )
 
