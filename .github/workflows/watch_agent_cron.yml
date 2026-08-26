@@ -42,8 +42,8 @@ jobs:
 
       - name: Install Zendesk dependencies
         run: |
-          pip install requests python-dotenv    
-          
+          pip install requests python-dotenv openai feedparser beautifulsoup4   
+
       - name: Run Zendesk Watch Agent
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
