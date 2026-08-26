@@ -38,7 +38,12 @@ jobs:
           python twilio_watch_agent.py
           python jumio_watch_agent.py
           python entrust_watch_agent.py
+      
 
+      - name: Install Zendesk dependencies
+        run: |
+          pip install requests python-dotenv    
+          
       - name: Run Zendesk Watch Agent
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
