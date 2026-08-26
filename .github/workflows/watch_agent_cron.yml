@@ -42,7 +42,7 @@ jobs:
 
       - name: Install Zendesk dependencies
         run: |
-          pip install requests python-dotenv openai feedparser beautifulsoup4   
+          pip install requests python-dotenv openai feedparser beautifulsoup4 groq   
 
       - name: Run Zendesk Watch Agent
         env:
