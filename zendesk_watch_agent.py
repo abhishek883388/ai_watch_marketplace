@@ -141,23 +141,26 @@ def fetch_zendesk_tickets() -> List[Dict]:
 
 
 def contains_vendor_keyword(text: str) -> Optional[str]:
-    """Check if text contains MONITORED vendor keywords. Returns vendor name or None."""
+    """Check if text contains MONITORED vendor keywords with word boundaries. Returns vendor name or None."""
     text_lower = text.lower()
     for vendor, keywords in MONITORED_VENDORS.items():
         for keyword in keywords:
-            if keyword in text_lower:
+            if re.search(r'\b' + re.escape(keyword) + r'\b', text_lower):
                 return vendor
     return None
 
 
 def contains_alert_keyword(text: str) -> bool:
-    """Check if text contains alert keywords."""
+    """Check if text contains alert keywords with word boundaries."""
     text_lower = text.lower()
-    return any(keyword in text_lower for keyword in ALERT_KEYWORDS)
+    for keyword in ALERT_KEYWORDS:
+        if re.search(r'\b' + re.escape(keyword) + r'\b', text_lower):
+            return True
+    return False
 
 
 def detect_any_vendor(text: str) -> Optional[str]:
-    """Detect ANY vendor keyword (monitored or not) for tracking rejected vendors."""
+    """Detect ANY vendor keyword (monitored or not) for tracking rejected vendors with word boundaries."""
     text_lower = text.lower()
     common_vendors = {
         "docusign": ["docusign", "esignature"],
@@ -170,7 +173,7 @@ def detect_any_vendor(text: str) -> Optional[str]:
 
     for vendor, keywords in common_vendors.items():
         for keyword in keywords:
-            if keyword in text_lower:
+            if re.search(r'\b' + re.escape(keyword) + r'\b', text_lower):
                 return vendor
 
     return None
