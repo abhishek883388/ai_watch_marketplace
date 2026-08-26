@@ -39,6 +39,14 @@ jobs:
           python jumio_watch_agent.py
           python entrust_watch_agent.py
 
+      - name: Run Zendesk Watch Agent
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          ZENDESK_SUBDOMAIN: ${{ secrets.ZENDESK_SUBDOMAIN }}
+          ZENDESK_EMAIL: ${{ secrets.ZENDESK_EMAIL }}
+          ZENDESK_API_TOKEN: ${{ secrets.ZENDESK_API_TOKEN }}
+        run: python zendesk_watch_agent.py
+
       - name: Fetch Resolved Incidents Archive
         run: python fetch_resolved_incidents.py
 
