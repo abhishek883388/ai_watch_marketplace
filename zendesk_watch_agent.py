@@ -71,38 +71,70 @@ def get_zendesk_headers() -> Dict[str, str]:
 
 
 def fetch_zendesk_tickets() -> List[Dict]:
-    """Fetch ALL tickets from Zendesk using pagination."""
+    """Fetch tickets from Zendesk created/updated in the past 3 months using search API."""
     if not all([ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN]):
         logger.error("Missing Zendesk credentials in .env file")
         return []
 
-    all_tickets = []
     base_url = f"https://{ZENDESK_SUBDOMAIN}.zendesk.com"
-    url = urljoin(base_url, "/api/v2/tickets.json")
     headers = get_zendesk_headers()
-    params = {"per_page": 100}
+
+    # Calculate date 3 months ago
+    date_3_months_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+
+    # First, get total ticket count
+    total_count = 0
+    try:
+        count_url = urljoin(base_url, "/api/v2/tickets.json")
+        count_response = requests.get(count_url, headers=headers, params={"per_page": 1}, timeout=30)
+        count_response.raise_for_status()
+        total_count = count_response.json().get('count', 0)
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Could not fetch total ticket count: {e}")
+
+    # Fetch tickets from past 3 months using search API
+    all_tickets = []
+    search_url = urljoin(base_url, "/api/v2/search.json")
+
+    # Query for tickets created or updated in the past 3 months
+    query = f'created_at>={date_3_months_ago} OR updated_at>={date_3_months_ago}'
+    params = {
+        "query": query,
+        "per_page": 100
+    }
 
     try:
         page = 1
-        while url:
-            logger.info(f"Fetching page {page}...")
-            response = requests.get(url, headers=headers, params=params, timeout=30)
+        while search_url:
+            logger.info(f"Fetching page {page} (3-month filter)...")
+            response = requests.get(search_url, headers=headers, params=params, timeout=30)
             response.raise_for_status()
 
             data = response.json()
-            tickets = data.get('tickets', [])
+            tickets = data.get('results', [])
+            if not tickets:
+                break
+
             all_tickets.extend(tickets)
 
             # Get next page URL
-            url = data.get('next_page')
+            search_url = data.get('next_page')
             page += 1
+
+        queried_count = len(all_tickets)
+        if total_count > 0:
+            logger.info(f"✅ Queried {queried_count} tickets (past 3 months) out of {total_count} total")
+        else:
+            logger.info(f"✅ Queried {queried_count} tickets (past 3 months)")
+
+        return all_tickets if all_tickets else []
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Error fetching Zendesk tickets: {e}")
-        return all_tickets
-
-    logger.info(f"✅ Fetched {len(all_tickets)} total tickets")
-    return all_tickets
+        if all_tickets:
+            logger.info(f"Returning {len(all_tickets)} tickets fetched before error")
+            return all_tickets
+        return []
 
 
 def contains_vendor_keyword(text: str) -> Optional[str]:
@@ -388,16 +420,16 @@ def main():
     """Main execution flow."""
     logger.info("🔍 Starting Zendesk Watch Agent...")
 
-    # Fetch all tickets
+    # Fetch tickets from past 3 months
     tickets = fetch_zendesk_tickets()
     if not tickets:
-        logger.error("No tickets fetched")
+        logger.warning("⚠️  No tickets found in the past 3 months")
         return
 
     # Filter for vendor alerts
     vendor_tickets = filter_vendor_alert_tickets(tickets)
     if not vendor_tickets:
-        logger.info("No vendor alert tickets found")
+        logger.info("ℹ️  No vendor alert tickets found in past 3 months")
         return
 
     # Load existing alerts to avoid duplicates
@@ -422,7 +454,7 @@ def main():
 
     # Final summary
     logger.info(
-        f"✅ Fetched {len(tickets)} tickets. "
+        f"✅ Past 3 months: {len(tickets)} tickets queried. "
         f"{len(vendor_tickets)} match vendors. "
         f"{len(new_alerts)} new alerts extracted."
     )
