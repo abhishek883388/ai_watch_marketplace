@@ -35,22 +35,23 @@ ZENDESK_API_TOKEN = os.getenv('ZENDESK_API_TOKEN')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 # Monitored vendors - STRICT filtering for only these vendors
+# IMPORTANT: Use specific vendor names and avoid generic keywords like "payment", "security", "compliance"
 # Primary match is by tag name, secondary is by text keywords
 MONITORED_VENDORS = {
     "twilio": ["twilio", "sendgrid", "sms", "messaging"],
-    "entrust": ["entrust", "card", "payment", "x-pays", "ssl", "certificate"],
+    "entrust": ["entrust", "card", "x-pays", "ssl", "certificate"],
     "entrust_identity": ["onfido", "identity verification"],
     "jumio": ["jumio", "kyc", "identity", "verification"],
     "atomic": ["atomic", "payments"],
     "biocatch": ["biocatch", "fraud"],
     "codat": ["codat", "accounting"],
-    "complyadvantage": ["complyadvantage", "compliance", "aml"],
+    "complyadvantage": ["complyadvantage", "aml"],
     "docusign": ["docusign", "esign", "signature"],
     "feedzai": ["feedzai", "risk", "fraud"],
     "jack_henry": ["jack henry", "ensenta", "banking"],
     "middesk": ["middesk", "business verification"],
-    "paymentus": ["paymentus", "payments"],
-    "payveris": ["payveris", "payment", "verification"],
+    "paymentus": ["paymentus"],
+    "payveris": ["payveris", "verification"],
     "saleedge": ["saleedge", "sales"],
     "savvy_money": ["savvy money", "financial"],
     "smarty": ["smarty", "address"],
