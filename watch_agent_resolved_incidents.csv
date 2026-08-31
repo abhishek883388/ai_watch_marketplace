@@ -1,4 +1,5 @@
 vendor,title,affected_services,created_at,resolved_at,duration_hours,status,impact_summary,incident_type
+Twilio,SMS Delivery Delays from Twilio to Ooredoo Kuwait,"SMS, Middle East & Africa",2026-08-28 14:56:19,2026-08-30 23:21:20,56.42,resolved,The incident has been resolved and SMS delivery from Twilio to Ooredoo network subscribers in Kuwait is operating normally.,Outage
 Twilio,SMS Delivery Delays from Twilio to Cellcom Israel,"SMS, Middle East & Africa",2026-08-30 17:34:03,2026-08-30 20:36:45,3.04,resolved,The incident has been resolved and SMS delivery from Twilio to Cellcom network subscribers in Israel is operating normally.,Outage
 Twilio,SMS Delivery Failures from Twilio to DiGi Malaysia,"SMS, APAC",2026-08-30 00:28:58,2026-08-30 12:41:12,12.2,resolved,The incident has been resolved and SMS delivery from Twilio to DiGi network subscribers in Malaysia is operating normally.,Outage
 Twilio,SMS Delivery Failures from Twilio to Datora Brazil,"SMS, Latin America",2026-08-28 11:54:34,2026-08-30 12:21:29,48.45,resolved,The incident has been resolved and SMS delivery from Twilio to Datora network subscribers in Brazil is operating normally.,Outage
