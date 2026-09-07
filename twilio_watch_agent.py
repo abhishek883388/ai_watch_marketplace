@@ -72,12 +72,17 @@ def fetch_twilio_changelog():
 
     entries_text = ""
     for entry in feed.entries[:20]:
-        search_text = (entry.title + " " + entry.summary).lower()
+        title = getattr(entry, 'title', '')
+        summary = getattr(entry, 'summary', '')
+        description = getattr(entry, 'description', '')
+        published = getattr(entry, 'published', '')
+
+        search_text = (title + " " + (summary or description)).lower()
         if any(service in search_text for service in TARGET_SERVICES):
-            title_clean = entry.title.replace('"', '\\"').replace('\\', '\\\\')
-            date_clean = entry.published.replace('"', '\\"').replace('\\', '\\\\')
-            summary_clean = entry.summary.replace('"', '\\"').replace('\\', '\\\\')
-            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+            title_clean = title.replace('"', '\\"').replace('\\', '\\\\')
+            date_clean = published.replace('"', '\\"').replace('\\', '\\\\')
+            content_clean = (summary or description).replace('"', '\\"').replace('\\', '\\\\')
+            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {content_clean}\n\n"
 
     return entries_text
 
