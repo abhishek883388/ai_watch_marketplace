@@ -363,8 +363,8 @@ def process_ticket(ticket: Dict) -> Optional[Dict]:
         action_priority = 'LOW'
 
     return {
-        'vendor': parsed['vendor'],
-        'product': parsed['vendor'].capitalize(),  # Simplified; could extract more specifically
+        'vendor': parsed['vendor'].capitalize(),
+        'product': parsed['vendor'].capitalize(),
         'title': parsed['subject'],
         'type': parsed['alert_type'],
         'priority': parsed['priority'],
