@@ -354,6 +354,9 @@ def save_alerts_to_file(alerts):
             if title not in incoming_titles and row.get('status_or_date', '').lower() not in ['resolved', 'completed']:
                 row['status_or_date'] = 'Resolved'
                 auto_resolved_count += 1
+                print(f"✅ AUTO-RESOLVED: {title[:80]}")
+            elif title in incoming_titles:
+                print(f"📡 STILL ACTIVE: {title[:80]}")
 
     # 3. Sort by urgency level (OVERDUE, CRITICAL, WARNING, NORMAL)
     urgency_order = {'OVERDUE': 0, 'CRITICAL': 1, 'WARNING': 2, 'NORMAL': 3}
