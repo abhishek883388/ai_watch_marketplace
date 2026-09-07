@@ -61,12 +61,25 @@ MONITORED_VENDORS = {
 # Vendor tag names for Zendesk tag matching (maps tag name to vendor key)
 VENDOR_TAG_NAMES = set(MONITORED_VENDORS.keys())
 
-ALERT_KEYWORDS = [
+# Alert keywords that COUNT (vendor-initiated changes)
+VALID_ALERT_KEYWORDS = [
     "deprecation", "deprecated", "breaking change",
-    "security", "vulnerability", "compliance",
-    "sunset", "eol", "end of life", "upgrade",
-    "deadline", "expires", "expiry", "urgent",
-    "critical", "action required", "api change"
+    "sunset", "eol", "end of life",
+    "security vulnerability", "security patch", "security update",
+    "compliance requirement", "regulatory change",
+    "api change", "endpoint change", "migration required",
+    "upgrade required", "action required"
+]
+
+# Alert keywords that DON'T count (internal/operational, not vendor alerts)
+FALSE_POSITIVE_KEYWORDS = [
+    "security group", "security issue",
+    "compliance check",
+    "production mode",
+    "sandbox", "test", "testing",
+    "account missing", "configuration", "setup",
+    "password reset", "login issue",
+    "network security", "firewall"
 ]
 
 # Track rejected vendors for logging
@@ -183,13 +196,53 @@ def contains_vendor_keyword(text: str) -> Optional[str]:
     return None
 
 
-def contains_alert_keyword(text: str) -> bool:
-    """Check if text contains alert keywords with word boundaries."""
+def contains_false_positive_keyword(text: str) -> Tuple[bool, str]:
+    """Check if text contains false positive keywords. Returns (has_false_positive, reason)."""
     text_lower = text.lower()
-    for keyword in ALERT_KEYWORDS:
+    for keyword in FALSE_POSITIVE_KEYWORDS:
         if re.search(r'\b' + re.escape(keyword) + r'\b', text_lower):
-            return True
-    return False
+            return True, f"contains '{keyword}' (not a vendor alert)"
+    return False, ""
+
+
+def contains_valid_alert_keyword(text: str) -> Tuple[bool, str]:
+    """Check if text contains VALID alert keywords (vendor changes).
+    Returns (has_alert, keyword_found)."""
+    text_lower = text.lower()
+
+    for keyword in VALID_ALERT_KEYWORDS:
+        if re.search(r'\b' + re.escape(keyword) + r'\b', text_lower):
+            return True, keyword
+
+    return False, ""
+
+
+def has_phrase_based_alert(text: str, vendor: str) -> Tuple[bool, str]:
+    """Check for phrase-based patterns like 'vendor X deprecation'.
+    This is stricter than just finding keywords separately.
+    Returns (has_phrase_alert, reason)."""
+    text_lower = text.lower()
+    vendor_lower = vendor.lower()
+
+    # Patterns: vendor + alert keyword in close proximity
+    # e.g., "twilio deprecation", "jumio breaking change", "entrust sunset"
+    patterns = [
+        rf'{re.escape(vendor_lower)}.*?deprecat',  # Within ~100 chars
+        rf'{re.escape(vendor_lower)}.*?breaking change',
+        rf'{re.escape(vendor_lower)}.*?sunset',
+        rf'{re.escape(vendor_lower)}.*?eol',
+        rf'{re.escape(vendor_lower)}.*?end of life',
+        rf'{re.escape(vendor_lower)}.*?security (vulnerability|patch|update)',
+        rf'{re.escape(vendor_lower)}.*?compliance requirement',
+        rf'{re.escape(vendor_lower)}.*?api change',
+        rf'{re.escape(vendor_lower)}.*?migration required',
+    ]
+
+    for pattern in patterns:
+        if re.search(pattern, text_lower, re.IGNORECASE | re.DOTALL):
+            return True, pattern[:40]
+
+    return False, ""
 
 
 def detect_any_vendor(text: str) -> Optional[str]:
@@ -213,58 +266,83 @@ def detect_any_vendor(text: str) -> Optional[str]:
 
 
 def filter_vendor_alert_tickets(tickets: List[Dict]) -> Tuple[List[Dict], Dict]:
-    """Filter tickets matching both monitored vendor and alert keywords.
-    PRIMARY: Check Zendesk tags for vendor match
-    FALLBACK: Check text for vendor keywords
-    REQUIRED: Alert keyword present
-    Returns (filtered_tickets, stats) where stats contains filtering details."""
+    """Filter tickets with STRICT criteria:
+    1. Must have monitored vendor (tag or keyword)
+    2. Must NOT contain false positive keywords
+    3. Must contain VALID alert keyword
+    4. Should have phrase-based match (vendor + alert together)
+
+    Returns (filtered_tickets, stats) with detailed rejection logging."""
     filtered = []
-    monitored_vendor_matches = 0
-    alert_keyword_matches = 0
-    tag_matches = 0
-    local_rejected_vendors = set()
+    stats = {
+        'monitored_vendor_matches': 0,
+        'tag_matches': 0,
+        'valid_alert_matches': 0,
+        'phrase_alert_matches': 0,
+        'false_positives_rejected': 0,
+        'no_alert_rejected': 0,
+        'rejected_vendors': set()
+    }
+
+    rejected_log = []
 
     for ticket in tickets:
         subject = ticket.get('subject', '')
         description = ticket.get('description', '')
         tags = ticket.get('tags', [])
+        ticket_id = ticket.get('id', '')
         combined_text = f"{subject} {description}"
 
-        # PRIMARY: Check Zendesk tags for vendor match
+        # Step 1: Check for monitored vendor (PRIMARY: tags, FALLBACK: text)
         monitored_vendor = get_vendor_from_tags(tags)
-
-        # FALLBACK: If no tag match, check text for vendor keywords
-        if not monitored_vendor:
-            monitored_vendor = contains_vendor_keyword(combined_text)
-        else:
-            tag_matches += 1
-
-        has_alert = contains_alert_keyword(combined_text)
-        any_vendor = detect_any_vendor(combined_text)
-
-        # Track monitored vendor matches
         if monitored_vendor:
-            monitored_vendor_matches += 1
+            stats['tag_matches'] += 1
+        else:
+            monitored_vendor = contains_vendor_keyword(combined_text)
 
-        # Track alert keyword matches
-        if has_alert:
-            alert_keyword_matches += 1
+        if not monitored_vendor:
+            any_vendor = detect_any_vendor(combined_text)
+            if any_vendor:
+                stats['rejected_vendors'].add(any_vendor)
+            continue
 
-        # Track rejected vendors (any vendor that's not monitored)
-        if any_vendor and not monitored_vendor:
-            local_rejected_vendors.add(any_vendor)
+        stats['monitored_vendor_matches'] += 1
 
-        # Only include if BOTH conditions met: monitored vendor AND alert keyword
-        if monitored_vendor and has_alert:
-            ticket['detected_vendor'] = monitored_vendor
-            filtered.append(ticket)
+        # Step 2: REJECT if contains false positive keywords
+        has_false_positive, fp_reason = contains_false_positive_keyword(combined_text)
+        if has_false_positive:
+            rejected_log.append(f"Ticket #{ticket_id} ({monitored_vendor}): {fp_reason}")
+            stats['false_positives_rejected'] += 1
+            continue
 
-    stats = {
-        'monitored_vendor_matches': monitored_vendor_matches,
-        'tag_matches': tag_matches,
-        'alert_keyword_matches': alert_keyword_matches,
-        'rejected_vendors': sorted(list(local_rejected_vendors))
-    }
+        # Step 3: Check for VALID alert keywords
+        has_valid_alert, alert_keyword = contains_valid_alert_keyword(combined_text)
+        if not has_valid_alert:
+            rejected_log.append(f"Ticket #{ticket_id} ({monitored_vendor}): no valid alert keyword")
+            stats['no_alert_rejected'] += 1
+            continue
+
+        stats['valid_alert_matches'] += 1
+
+        # Step 4: Check for phrase-based alert (stricter)
+        has_phrase_alert, pattern = has_phrase_based_alert(combined_text, monitored_vendor)
+        if has_phrase_alert:
+            stats['phrase_alert_matches'] += 1
+
+        # INCLUDE: All criteria met
+        ticket['detected_vendor'] = monitored_vendor
+        filtered.append(ticket)
+        logger.debug(f"✅ Included: #{ticket_id} ({monitored_vendor}) - {alert_keyword}")
+
+    # Log rejected tickets
+    if rejected_log:
+        logger.info(f"⚠️  Rejected tickets ({len(rejected_log)}):")
+        for log_entry in rejected_log[:10]:  # Show first 10
+            logger.info(f"  {log_entry}")
+        if len(rejected_log) > 10:
+            logger.info(f"  ... and {len(rejected_log) - 10} more")
+
+    stats['rejected_vendors'] = sorted(list(stats['rejected_vendors']))
 
     return filtered, stats
 
@@ -528,20 +606,27 @@ def main():
     # Log filtering statistics
     monitored_count = filter_stats['monitored_vendor_matches']
     tag_matches = filter_stats['tag_matches']
-    alert_count = filter_stats['alert_keyword_matches']
+    valid_alert_count = filter_stats['valid_alert_matches']
+    phrase_alert_count = filter_stats['phrase_alert_matches']
+    false_positive_rejected = filter_stats['false_positives_rejected']
+    no_alert_rejected = filter_stats['no_alert_rejected']
     rejected = filter_stats['rejected_vendors']
 
+    logger.info(
+        f"📊 Filtering: {len(tickets)} tickets → {monitored_count} vendor matches "
+        f"({tag_matches} via tags) → {valid_alert_count} with valid alerts "
+        f"({phrase_alert_count} phrase-matched) → {len(vendor_tickets)} final alerts"
+    )
+    logger.info(
+        f"⚠️  Rejected: {false_positive_rejected} false positives + {no_alert_rejected} no alert = "
+        f"{false_positive_rejected + no_alert_rejected} tickets"
+    )
+
     if vendor_tickets:
-        rejected_str = f"Rejected: {', '.join(rejected)}" if rejected else "No rejected vendors"
-        logger.info(
-            f"✅ {len(tickets)} tickets. {monitored_count} match monitored vendors "
-            f"({tag_matches} via tags). {alert_count} have alert keywords. "
-            f"Extracted {len(vendor_tickets)} alerts. {rejected_str}"
-        )
-    else:
-        logger.info("ℹ️  No vendor alert tickets found in past 3 months (strict monitoring)")
         if rejected:
-            logger.info(f"Found tickets from non-monitored vendors: {', '.join(rejected)}")
+            logger.info(f"📌 Non-monitored vendors found: {', '.join(rejected)}")
+    else:
+        logger.info("ℹ️  No vendor alert tickets found (all rejected or no matches)")
         return
 
     # Load existing alerts to avoid duplicates
