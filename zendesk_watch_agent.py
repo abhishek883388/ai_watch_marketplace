@@ -34,56 +34,26 @@ ZENDESK_EMAIL = os.getenv('ZENDESK_EMAIL')
 ZENDESK_API_TOKEN = os.getenv('ZENDESK_API_TOKEN')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
-# Monitored vendors - STRICT filtering for only these vendors
-# IMPORTANT: Use specific vendor names and avoid generic keywords like "payment", "security", "compliance"
-# Primary match is by tag name, secondary is by text keywords
-MONITORED_VENDORS = {
-    "twilio": ["twilio", "sendgrid", "sms", "messaging"],
-    "entrust": ["entrust", "card", "x-pays", "ssl", "certificate"],
-    "entrust_identity": ["onfido", "identity verification"],
-    "jumio": ["jumio", "kyc", "identity", "verification"],
-    "atomic": ["atomic", "payments"],
-    "biocatch": ["biocatch", "fraud"],
-    "codat": ["codat", "accounting"],
-    "complyadvantage": ["complyadvantage", "aml"],
-    "docusign": ["docusign", "esign", "signature"],
-    "feedzai": ["feedzai", "risk", "fraud"],
-    "jack_henry": ["jack henry", "ensenta", "banking"],
-    "middesk": ["middesk", "business verification"],
-    "paymentus": ["paymentus"],
-    "payveris": ["payveris", "verification"],
-    "saleedge": ["saleedge", "sales"],
-    "savvy_money": ["savvy money", "financial"],
-    "smarty": ["smarty", "address"],
-    "yodlee": ["yodlee", "financial", "aggregation"],
-}
-
-# Vendor tag names for Zendesk tag matching (maps tag name to vendor key)
-VENDOR_TAG_NAMES = set(MONITORED_VENDORS.keys())
-
-# Alert keywords that COUNT (vendor-initiated changes)
-VALID_ALERT_KEYWORDS = [
-    "deprecation", "deprecated", "breaking change",
-    "sunset", "eol", "end of life",
-    "security vulnerability", "security patch", "security update",
-    "compliance requirement", "regulatory change",
-    "api change", "endpoint change", "migration required",
-    "upgrade required", "action required"
+# Monitored vendor names - simple list for keyword matching
+MONITORED_VENDORS = [
+    "twilio", "sendgrid",
+    "entrust", "onfido",
+    "jumio",
+    "atomic",
+    "biocatch",
+    "codat",
+    "complyadvantage",
+    "docusign",
+    "feedzai",
+    "jack henry", "ensenta",
+    "middesk",
+    "paymentus",
+    "payveris",
+    "saleedge",
+    "savvy money",
+    "smarty",
+    "yodlee",
 ]
-
-# Alert keywords that DON'T count (internal/operational, not vendor alerts)
-FALSE_POSITIVE_KEYWORDS = [
-    "security group", "security issue",
-    "compliance check",
-    "production mode",
-    "sandbox", "test", "testing",
-    "account missing", "configuration", "setup",
-    "password reset", "login issue",
-    "network security", "firewall"
-]
-
-# Track rejected vendors for logging
-rejected_vendors = set()
 
 OUTPUT_FILE = "zendesk_watch_agent_alerts.csv"
 CSV_COLUMNS = [
@@ -173,176 +143,42 @@ def fetch_zendesk_tickets() -> List[Dict]:
         return []
 
 
-def get_vendor_from_tags(tags: List[str]) -> Optional[str]:
-    """Check if ticket tags contain a monitored vendor tag. Returns vendor name or None."""
-    if not tags:
-        return None
-
-    tags_lower = [tag.lower() for tag in tags]
-    for tag in tags_lower:
-        if tag in VENDOR_TAG_NAMES:
-            return tag
-
-    return None
-
-
-def contains_vendor_keyword(text: str) -> Optional[str]:
-    """Check if text contains MONITORED vendor keywords with word boundaries. Returns vendor name or None."""
+def find_vendor_in_text(text: str) -> Optional[str]:
+    """Check if text contains any monitored vendor name (case-insensitive).
+    Returns vendor name if found, None otherwise."""
     text_lower = text.lower()
-    for vendor, keywords in MONITORED_VENDORS.items():
-        for keyword in keywords:
-            if re.search(r'\b' + re.escape(keyword) + r'\b', text_lower):
-                return vendor
-    return None
-
-
-def contains_false_positive_keyword(text: str) -> Tuple[bool, str]:
-    """Check if text contains false positive keywords. Returns (has_false_positive, reason)."""
-    text_lower = text.lower()
-    for keyword in FALSE_POSITIVE_KEYWORDS:
-        if re.search(r'\b' + re.escape(keyword) + r'\b', text_lower):
-            return True, f"contains '{keyword}' (not a vendor alert)"
-    return False, ""
-
-
-def contains_valid_alert_keyword(text: str) -> Tuple[bool, str]:
-    """Check if text contains VALID alert keywords (vendor changes).
-    Returns (has_alert, keyword_found)."""
-    text_lower = text.lower()
-
-    for keyword in VALID_ALERT_KEYWORDS:
-        if re.search(r'\b' + re.escape(keyword) + r'\b', text_lower):
-            return True, keyword
-
-    return False, ""
-
-
-def has_phrase_based_alert(text: str, vendor: str) -> Tuple[bool, str]:
-    """Check for phrase-based patterns like 'vendor X deprecation'.
-    This is stricter than just finding keywords separately.
-    Returns (has_phrase_alert, reason)."""
-    text_lower = text.lower()
-    vendor_lower = vendor.lower()
-
-    # Patterns: vendor + alert keyword in close proximity
-    # e.g., "twilio deprecation", "jumio breaking change", "entrust sunset"
-    patterns = [
-        rf'{re.escape(vendor_lower)}.*?deprecat',  # Within ~100 chars
-        rf'{re.escape(vendor_lower)}.*?breaking change',
-        rf'{re.escape(vendor_lower)}.*?sunset',
-        rf'{re.escape(vendor_lower)}.*?eol',
-        rf'{re.escape(vendor_lower)}.*?end of life',
-        rf'{re.escape(vendor_lower)}.*?security (vulnerability|patch|update)',
-        rf'{re.escape(vendor_lower)}.*?compliance requirement',
-        rf'{re.escape(vendor_lower)}.*?api change',
-        rf'{re.escape(vendor_lower)}.*?migration required',
-    ]
-
-    for pattern in patterns:
-        if re.search(pattern, text_lower, re.IGNORECASE | re.DOTALL):
-            return True, pattern[:40]
-
-    return False, ""
-
-
-def detect_any_vendor(text: str) -> Optional[str]:
-    """Detect ANY vendor keyword (monitored or not) for tracking rejected vendors with word boundaries."""
-    text_lower = text.lower()
-    common_vendors = {
-        "docusign": ["docusign", "esignature"],
-        "codat": ["codat", "accounting", "erp"],
-        "atomic": ["atomic", "kyb"],
-        "biocatch": ["biocatch", "fraud"],
-        "jack henry": ["jack henry", "jha"],
-        "bankcard": ["bankcard", "visa", "mastercard"],
-    }
-
-    for vendor, keywords in common_vendors.items():
-        for keyword in keywords:
-            if re.search(r'\b' + re.escape(keyword) + r'\b', text_lower):
-                return vendor
-
+    for vendor in MONITORED_VENDORS:
+        if vendor in text_lower:
+            return vendor
     return None
 
 
 def filter_vendor_alert_tickets(tickets: List[Dict]) -> Tuple[List[Dict], Dict]:
-    """Filter tickets with STRICT criteria:
-    1. Must have monitored vendor (tag or keyword)
-    2. Must NOT contain false positive keywords
-    3. Must contain VALID alert keyword
-    4. Should have phrase-based match (vendor + alert together)
-
-    Returns (filtered_tickets, stats) with detailed rejection logging."""
+    """Simple filter: include ticket if it mentions any monitored vendor by name.
+    Returns (filtered_tickets, stats)."""
     filtered = []
-    stats = {
-        'monitored_vendor_matches': 0,
-        'tag_matches': 0,
-        'valid_alert_matches': 0,
-        'phrase_alert_matches': 0,
-        'false_positives_rejected': 0,
-        'no_alert_rejected': 0,
-        'rejected_vendors': set()
-    }
-
-    rejected_log = []
+    vendor_counts = {}
 
     for ticket in tickets:
         subject = ticket.get('subject', '')
         description = ticket.get('description', '')
-        tags = ticket.get('tags', [])
-        ticket_id = ticket.get('id', '')
         combined_text = f"{subject} {description}"
 
-        # Step 1: Check for monitored vendor (PRIMARY: tags, FALLBACK: text)
-        monitored_vendor = get_vendor_from_tags(tags)
-        if monitored_vendor:
-            stats['tag_matches'] += 1
-        else:
-            monitored_vendor = contains_vendor_keyword(combined_text)
+        # Check if ticket mentions any monitored vendor
+        vendor = find_vendor_in_text(combined_text)
 
-        if not monitored_vendor:
-            any_vendor = detect_any_vendor(combined_text)
-            if any_vendor:
-                stats['rejected_vendors'].add(any_vendor)
-            continue
+        if vendor:
+            ticket['detected_vendor'] = vendor
+            filtered.append(ticket)
+            vendor_counts[vendor] = vendor_counts.get(vendor, 0) + 1
 
-        stats['monitored_vendor_matches'] += 1
+    # Build vendor summary for logging
+    vendor_summary = " | ".join(f"{v}: {count}" for v, count in sorted(vendor_counts.items()))
 
-        # Step 2: REJECT if contains false positive keywords
-        has_false_positive, fp_reason = contains_false_positive_keyword(combined_text)
-        if has_false_positive:
-            rejected_log.append(f"Ticket #{ticket_id} ({monitored_vendor}): {fp_reason}")
-            stats['false_positives_rejected'] += 1
-            continue
-
-        # Step 3: Check for VALID alert keywords
-        has_valid_alert, alert_keyword = contains_valid_alert_keyword(combined_text)
-        if not has_valid_alert:
-            rejected_log.append(f"Ticket #{ticket_id} ({monitored_vendor}): no valid alert keyword")
-            stats['no_alert_rejected'] += 1
-            continue
-
-        stats['valid_alert_matches'] += 1
-
-        # Step 4: Check for phrase-based alert (stricter)
-        has_phrase_alert, pattern = has_phrase_based_alert(combined_text, monitored_vendor)
-        if has_phrase_alert:
-            stats['phrase_alert_matches'] += 1
-
-        # INCLUDE: All criteria met
-        ticket['detected_vendor'] = monitored_vendor
-        filtered.append(ticket)
-        logger.debug(f"✅ Included: #{ticket_id} ({monitored_vendor}) - {alert_keyword}")
-
-    # Log rejected tickets
-    if rejected_log:
-        logger.info(f"⚠️  Rejected tickets ({len(rejected_log)}):")
-        for log_entry in rejected_log[:10]:  # Show first 10
-            logger.info(f"  {log_entry}")
-        if len(rejected_log) > 10:
-            logger.info(f"  ... and {len(rejected_log) - 10} more")
-
-    stats['rejected_vendors'] = sorted(list(stats['rejected_vendors']))
+    stats = {
+        'vendor_counts': vendor_counts,
+        'vendor_summary': vendor_summary
+    }
 
     return filtered, stats
 
@@ -600,33 +436,19 @@ def main():
         logger.warning("⚠️  No tickets found in the past 3 months")
         return
 
-    # Filter for monitored vendor alerts with strict filtering
+    # Filter for monitored vendors (simple: just check if vendor name is mentioned)
     vendor_tickets, filter_stats = filter_vendor_alert_tickets(tickets)
 
-    # Log filtering statistics
-    monitored_count = filter_stats['monitored_vendor_matches']
-    tag_matches = filter_stats['tag_matches']
-    valid_alert_count = filter_stats['valid_alert_matches']
-    phrase_alert_count = filter_stats['phrase_alert_matches']
-    false_positive_rejected = filter_stats['false_positives_rejected']
-    no_alert_rejected = filter_stats['no_alert_rejected']
-    rejected = filter_stats['rejected_vendors']
-
+    # Log results
+    vendor_summary = filter_stats['vendor_summary']
     logger.info(
-        f"📊 Filtering: {len(tickets)} tickets → {monitored_count} vendor matches "
-        f"({tag_matches} via tags) → {valid_alert_count} with valid alerts "
-        f"({phrase_alert_count} phrase-matched) → {len(vendor_tickets)} final alerts"
+        f"✅ Extracted {len(vendor_tickets)} tickets containing monitored vendor names"
     )
-    logger.info(
-        f"⚠️  Rejected: {false_positive_rejected} false positives + {no_alert_rejected} no alert = "
-        f"{false_positive_rejected + no_alert_rejected} tickets"
-    )
+    if vendor_summary:
+        logger.info(f"Breakdown: {vendor_summary}")
 
-    if vendor_tickets:
-        if rejected:
-            logger.info(f"📌 Non-monitored vendors found: {', '.join(rejected)}")
-    else:
-        logger.info("ℹ️  No vendor alert tickets found (all rejected or no matches)")
+    if not vendor_tickets:
+        logger.info("ℹ️  No tickets found mentioning monitored vendors")
         return
 
     # Load existing alerts to avoid duplicates
