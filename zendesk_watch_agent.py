@@ -383,38 +383,35 @@ def process_ticket(ticket: Dict) -> Optional[Dict]:
     }
 
 
-def load_existing_alerts() -> set:
-    """Load existing ticket IDs from CSV to avoid duplicates."""
+def load_existing_alerts() -> Dict[str, Dict]:
+    """Load existing alerts from CSV as a dict keyed by ticket_id."""
     if not os.path.exists(OUTPUT_FILE):
-        return set()
+        return {}
 
-    existing_ids = set()
+    existing_alerts = {}
     try:
         with open(OUTPUT_FILE, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                existing_ids.add(str(row.get('ticket_id', '')))
+                ticket_id = str(row.get('ticket_id', ''))
+                if ticket_id:
+                    existing_alerts[ticket_id] = row
     except Exception as e:
         logger.warning(f"Error reading existing alerts: {e}")
 
-    return existing_ids
+    return existing_alerts
 
 
 def save_alerts_to_file(alerts: List[Dict]) -> None:
-    """Save alerts to CSV file."""
+    """Save alerts to CSV file (rewrite mode - preserves older tickets outside query window)."""
     if not alerts:
         logger.info("No alerts to save")
         return
 
     try:
-        file_exists = os.path.exists(OUTPUT_FILE)
-
-        with open(OUTPUT_FILE, 'a', newline='', encoding='utf-8') as f:
+        with open(OUTPUT_FILE, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
-
-            # Write header only if file is new
-            if not file_exists:
-                writer.writeheader()
+            writer.writeheader()
 
             for alert in alerts:
                 # Ensure all columns are present
@@ -451,30 +448,39 @@ def main():
         logger.info("ℹ️  No tickets found mentioning monitored vendors")
         return
 
-    # Load existing alerts to avoid duplicates
-    existing_ids = load_existing_alerts()
-    logger.info(f"📊 {len(existing_ids)} alerts already processed")
+    # Load existing alerts (dict keyed by ticket_id)
+    existing_alerts = load_existing_alerts()
+    logger.info(f"📊 {len(existing_alerts)} alerts already in CSV")
 
-    # Process new tickets
-    new_alerts = []
+    # Process tickets and merge with existing alerts
+    updated_alerts = {}
+    new_count = 0
+    updated_count = 0
+
     for ticket in vendor_tickets:
         ticket_id = str(ticket.get('id'))
-
-        # Skip if already processed
-        if ticket_id in existing_ids:
-            continue
-
         alert = process_ticket(ticket)
-        if alert:
-            new_alerts.append(alert)
 
-    # Save new alerts
-    save_alerts_to_file(new_alerts)
+        if alert:
+            if ticket_id in existing_alerts:
+                updated_count += 1
+            else:
+                new_count += 1
+            updated_alerts[ticket_id] = alert
+
+    # Preserve existing alerts not in current query (older tickets outside 3-month window)
+    for ticket_id, alert in existing_alerts.items():
+        if ticket_id not in updated_alerts:
+            updated_alerts[ticket_id] = alert
+
+    # Convert dict to list and save
+    all_alerts = list(updated_alerts.values())
+    save_alerts_to_file(all_alerts)
 
     # Final summary
     logger.info(
         f"✅ Processing complete: {len(vendor_tickets)} monitored vendor alerts. "
-        f"{len(new_alerts)} new alerts extracted."
+        f"{new_count} new, {updated_count} updated. Total in CSV: {len(all_alerts)}"
     )
 
 
