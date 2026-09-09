@@ -45,7 +45,7 @@ def fetch_twilio_status():
     except Exception as e:
         print(f"❌ Error fetching status API: {e}")
         return ""
-        
+
     entries_text = ""
     for incident in data.get("incidents", []):
         incident_name = incident.get('name', '').strip()
@@ -58,6 +58,12 @@ def fetch_twilio_status():
             name_clean = incident_name.replace('"', '\\"').replace('\\', '\\\\')
             status_clean = str(incident.get('status', '')).replace('"', '\\"').replace('\\', '\\\\')
             entries_text += f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
+
+            incident_url = incident.get('shortlink', '')
+            if incident_url:
+                url_clean = incident_url.replace('"', '\\"').replace('\\', '\\\\')
+                entries_text += f"Link: {url_clean}\n"
+
             if incident.get("incident_updates"):
                 body_clean = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
                 entries_text += f"Summary: {body_clean}\n\n"
@@ -76,13 +82,20 @@ def fetch_twilio_changelog():
         summary = getattr(entry, 'summary', '')
         description = getattr(entry, 'description', '')
         published = getattr(entry, 'published', '')
+        link = getattr(entry, 'link', '')
 
         search_text = (title + " " + (summary or description)).lower()
         if any(service in search_text for service in TARGET_SERVICES):
             title_clean = title.replace('"', '\\"').replace('\\', '\\\\')
             date_clean = published.replace('"', '\\"').replace('\\', '\\\\')
             content_clean = (summary or description).replace('"', '\\"').replace('\\', '\\\\')
-            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {content_clean}\n\n"
+            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {content_clean}\n"
+
+            if link:
+                link_clean = link.replace('"', '\\"').replace('\\', '\\\\')
+                entries_text += f"Link: {link_clean}\n"
+
+            entries_text += "\n"
 
     return entries_text
 
@@ -97,6 +110,7 @@ def analyze_status(status_text):
     You are a Site Reliability Engineer for Backbase.
     Read the Twilio Status entries. Identify active incidents.
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter capitalization, wording, or spelling.
+    CRITICAL RULE: If a "Link:" is present in the entry, extract it and include as "incident_url".
 
     Output strictly as JSON:
     {{
@@ -109,7 +123,8 @@ def analyze_status(status_text):
           "status_or_date": "Investigating, Identified, or Monitoring",
           "impact_summary": "1 sentence summary",
           "backbase_action_required": "Immediate Action, Monitor, or No Action",
-          "backbase_rationale": "1 sentence justification"
+          "backbase_rationale": "1 sentence justification",
+          "incident_url": "URL from Link field if present, else empty string"
         }}
       ]
     }}
@@ -136,6 +151,7 @@ def analyze_deprecations(changelog_text):
     You are a Software Architect for Backbase.
     Read the Twilio changelog entries. Identify ONLY items that represent a deprecation, breaking change, or compliance update.
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter wording.
+    CRITICAL RULE: If a "Link:" is present in the entry, extract it and include as "incident_url".
 
     Output strictly as JSON:
     {{
@@ -148,7 +164,8 @@ def analyze_deprecations(changelog_text):
           "status_or_date": "sunset date or None Specified",
           "impact_summary": "1 sentence summary",
           "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
-          "backbase_rationale": "1 sentence justification"
+          "backbase_rationale": "1 sentence justification",
+          "incident_url": "URL from Link field if present, else empty string"
         }}
       ]
     }}
@@ -285,6 +302,7 @@ def save_alerts_to_file(alerts):
         "age_days",
         "deadline_date",
         "title",
+        "incident_url",
         "product_impacted",
         "type",
         "status_or_date",
@@ -325,6 +343,7 @@ def save_alerts_to_file(alerts):
             "age_days": '0',
             "deadline_date": alert.get('deadline_date') or 'N/A',
             "title": title,
+            "incident_url": alert.get('incident_url') or '',
             "product_impacted": alert.get('product_impacted') or 'Unspecified',
             "type": alert.get('type') or 'N/A',
             "status_or_date": alert.get('status_or_date') or 'N/A',
