@@ -320,6 +320,10 @@ def save_alerts_to_file(alerts):
             for row in reader:
                 title = row.get('title')
                 if title:
+                    # Ensure all required fields exist (for backwards compatibility with old CSV format)
+                    for key in keys:
+                        if key not in row:
+                            row[key] = ''
                     existing_records[title] = row
                     record_order.append(title)
 
