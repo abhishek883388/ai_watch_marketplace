@@ -334,6 +334,7 @@ def save_alerts_to_file(alerts):
             "urgency_level": alert.get('urgency_level') or 'NORMAL',
             "deadline_date": alert.get('deadline_date') or 'N/A',
             "title": title,
+            "incident_url": alert.get('incident_url') or '',
             "product_impacted": alert.get('product_impacted') or 'Unspecified',
             "type": alert.get('type') or 'N/A',
             "status_or_date": alert.get('status_or_date') or 'N/A',
