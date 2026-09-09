@@ -360,6 +360,9 @@ def save_alerts_to_file(alerts):
                 clean_alert['age_status'] = existing_records[title].get('age_status', 'New')
             if 'age_days' in existing_records[title]:
                 clean_alert['age_days'] = existing_records[title].get('age_days', '0')
+            # Preserve incident_url if not in new alert
+            if not clean_alert.get('incident_url') and existing_records[title].get('incident_url'):
+                clean_alert['incident_url'] = existing_records[title].get('incident_url')
             existing_records[title] = clean_alert
         else:
             existing_records[title] = clean_alert
