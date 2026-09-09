@@ -425,6 +425,7 @@ def save_alerts_to_file(alerts):
         "age_days",
         "deadline_date",
         "title",
+        "incident_url",
         "product_impacted",
         "type",
         "status_or_date",
@@ -442,6 +443,10 @@ def save_alerts_to_file(alerts):
             for row in reader:
                 title = row.get('title')
                 if title:
+                    # Ensure all required fields exist (for backwards compatibility with old CSV format)
+                    for key in keys:
+                        if key not in row:
+                            row[key] = ''
                     existing_records[title] = row
                     record_order.append(title)
 

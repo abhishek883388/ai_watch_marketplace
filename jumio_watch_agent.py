@@ -295,6 +295,7 @@ def save_alerts_to_file(alerts):
         "age_days",
         "deadline_date",
         "title",
+        "incident_url",
         "product_impacted",
         "type",
         "status_or_date",
