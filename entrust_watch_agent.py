@@ -76,9 +76,16 @@ def fetch_entrust_status():
                 status_clean = status.replace('"', '\\"').replace('\\', '\\\\')
                 entries_text += f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
 
+                incident_url = incident.get('shortlink', '') or incident.get('url', '')
+                if incident_url:
+                    url_clean = incident_url.replace('"', '\\"').replace('\\', '\\\\')
+                    entries_text += f"Link: {url_clean}\n"
+
                 if incident.get("incident_updates"):
                     update_body = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
-                    entries_text += f"Summary: {update_body}\n\n"
+                    entries_text += f"Summary: {update_body}\n"
+
+                entries_text += "\n"
 
     except Exception as e:
         print(f"⚠️ [SRE API Error] Failed to fetch {VENDOR_NAME} status (check network): {type(e).__name__}")
@@ -138,7 +145,14 @@ def fetch_entrust_changelog():
                         summary_clean = summary.replace('"', '\\"').replace('\\', '\\\\')
                         date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
 
-                        entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+                        entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n"
+
+                        link = entry.get('link', '')
+                        if link:
+                            link_clean = link.replace('"', '\\"').replace('\\', '\\\\')
+                            entries_text += f"Link: {link_clean}\n"
+
+                        entries_text += "\n"
 
         except Exception:
             continue
@@ -199,7 +213,7 @@ def fetch_antelop_articles():
                 title_clean = article_title.replace('"', '\\"').replace('\\', '\\\\')
                 url_clean = f"https://antelop-support.freshdesk.com/en/support/solutions/articles/{article_id}-{slug}".replace('"', '\\"')
 
-                entries_text += f"EXACT_TITLE: {title_clean}\nArticle ID: {article_id}\nURL: {url_clean}\n\n"
+                entries_text += f"EXACT_TITLE: {title_clean}\nArticle ID: {article_id}\nLink: {url_clean}\n\n"
 
     except urllib.error.URLError as e:
         print(f"   ⚠️ Failed to reach Antelop portal: {type(e).__name__}")
@@ -221,6 +235,7 @@ def analyze_status(status_text):
     Read the {VENDOR_NAME} incident entries for Push Card X-Pays and Secure Card Display.
 
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter capitalization, wording, or spelling.
+    CRITICAL RULE: If a "Link:" is present in the entry, extract it and include as "incident_url".
 
     Focus on:
     1. How does this incident impact Backbase's Apple/Google Pay integration?
@@ -239,7 +254,8 @@ def analyze_status(status_text):
           "status_or_date": "Investigating, Identified, or Monitoring",
           "impact_summary": "1 sentence summary of how payment card features are impacted",
           "backbase_action_required": "Immediate Action, Monitor, or No Action",
-          "backbase_rationale": "1 sentence on payment/card security implications"
+          "backbase_rationale": "1 sentence on payment/card security implications",
+          "incident_url": "URL from Link field if present, else empty string"
         }}
       ]
     }}
@@ -269,6 +285,7 @@ def analyze_deprecations(changelog_text):
     Identify ONLY items that represent a deprecation, breaking change, SDK sunset, or security update.
 
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter wording.
+    CRITICAL RULE: If a "Link:" is present in the entry, extract it and include as "incident_url".
 
     Focus on:
     1. Will this require code migration in Backbase's payment processing?
@@ -287,7 +304,8 @@ def analyze_deprecations(changelog_text):
           "status_or_date": "sunset date or None Specified",
           "impact_summary": "1 sentence summary of card/payment impact",
           "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
-          "backbase_rationale": "1 sentence on why Backbase does or does not need to act on payment card features"
+          "backbase_rationale": "1 sentence on why Backbase does or does not need to act on payment card features",
+          "incident_url": "URL from Link or URL field if present, else empty string"
         }}
       ]
     }}

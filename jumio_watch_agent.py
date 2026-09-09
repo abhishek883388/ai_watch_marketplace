@@ -52,7 +52,14 @@ def fetch_jumio_status():
             summary_clean = entry.get('summary', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
             date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
             print(f"🎯 [{VENDOR_NAME} SRE Match]: {entry.title.strip()}")
-            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+            entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n"
+
+            link = entry.get('link', '')
+            if link:
+                link_clean = link.replace('"', '\\"').replace('\\', '\\\\')
+                entries_text += f"Link: {link_clean}\n"
+
+            entries_text += "\n"
 
     return entries_text
     
@@ -80,7 +87,14 @@ def fetch_jumio_changelog():
                 summary_clean = summary.replace('"', '\\"').replace('\\', '\\\\')
                 date_clean = entry.get('published', 'N/A').replace('"', '\\"').replace('\\', '\\\\')
 
-                entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n\n"
+                entries_text += f"EXACT_TITLE: {title_clean}\nDate: {date_clean}\nSummary: {summary_clean}\n"
+
+                link = entry.get('link', '')
+                if link:
+                    link_clean = link.replace('"', '\\"').replace('\\', '\\\\')
+                    entries_text += f"Link: {link_clean}\n"
+
+                entries_text += "\n"
 
     return entries_text
 
@@ -101,7 +115,8 @@ Analyze the following Jumio incident entries for Identity Verification (ID&V).
 Rules:
 1. Extract active incidents.
 2. For the "title" field, you MUST copy the EXACT string from "EXACT_TITLE:" without changing spelling or casing.
-3. Respond ONLY with a valid JSON object matching this structure:
+3. If a "Link:" is present in the entry, extract it and include as "incident_url".
+4. Respond ONLY with a valid JSON object matching this structure:
 
 {{
   "alerts": [
@@ -113,7 +128,8 @@ Rules:
       "status_or_date": "Investigating",
       "impact_summary": "One sentence summary of outage.",
       "backbase_action_required": "Monitor",
-      "backbase_rationale": "One sentence explaining impact on customer onboarding."
+      "backbase_rationale": "One sentence explaining impact on customer onboarding.",
+      "incident_url": "URL from Link field if present, else empty string"
     }}
   ]
 }}
@@ -145,6 +161,7 @@ def analyze_deprecations(changelog_text):
     You are a Software Architect for Backbase (a digital banking platform).
     Read the {VENDOR_NAME} changelog entries for ID&V. Identify ONLY items that represent a deprecation, breaking change, SDK sunset, or compliance update.
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter wording.
+    CRITICAL RULE: If a "Link:" is present in the entry, extract it and include as "incident_url".
 
     Output strictly as JSON:
     {{
@@ -157,7 +174,8 @@ def analyze_deprecations(changelog_text):
           "status_or_date": "sunset date or None Specified",
           "impact_summary": "1 sentence summary",
           "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
-          "backbase_rationale": "1 sentence explaining why Backbase does or does not need to act on the SDK or API."
+          "backbase_rationale": "1 sentence explaining why Backbase does or does not need to act on the SDK or API.",
+          "incident_url": "URL from Link field if present, else empty string"
         }}
       ]
     }}
