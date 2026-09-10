@@ -341,17 +341,69 @@ Decision logic:
         return None
 
 
+def refine_action_required(alert_type: str, description: str, subject: str, days_until: Optional[int]) -> str:
+    """Determine accurate backbase_action_required based on ticket content and urgency.
+
+    Logic:
+    1. Breaking Change + migration keywords → Code Migration Required
+    2. Compliance/Security + assessment keywords → Assessment Needed
+    3. Deadline < 30 days → Code Migration Required (urgent)
+    4. Deadline 30-60 days → Assessment Needed
+    5. Default → Assessment Needed
+    """
+    text_combined = (description + " " + subject).lower()
+
+    # Check for migration/code-change keywords
+    migration_keywords = ["update", "migrate", "migration", "upgrade", "change", "new version", "breaking", "deprecated", "removed"]
+    has_migration_keywords = any(kw in text_combined for kw in migration_keywords)
+
+    # Check for assessment/review keywords
+    assessment_keywords = ["assess", "review", "check", "evaluate", "consider", "might", "may", "potential", "need to"]
+    has_assessment_keywords = any(kw in text_combined for kw in assessment_keywords)
+
+    # Rule 1: Breaking Change + migration keywords
+    if alert_type.lower() == "breaking change" and has_migration_keywords:
+        return "Code Migration Required"
+
+    # Rule 2: Compliance/Security + assessment keywords
+    if ("compliance" in alert_type.lower() or "security" in alert_type.lower()) and has_assessment_keywords:
+        return "Assessment Needed"
+
+    # Rule 3: Urgent deadline (< 30 days) - assume code migration needed
+    if days_until is not None and days_until < 30 and days_until >= 0:
+        return "Code Migration Required"
+
+    # Rule 4: Medium deadline (30-60 days) - assess first
+    if days_until is not None and 30 <= days_until <= 60:
+        return "Assessment Needed"
+
+    # Rule 5: Breaking Change without specific keywords - migration likely needed
+    if alert_type.lower() == "breaking change":
+        return "Code Migration Required"
+
+    # Default: Assessment Needed (safest approach - evaluate before acting)
+    return "Assessment Needed"
+
+
 def process_ticket(ticket: Dict) -> Optional[Dict]:
-    """Process a single ticket: parse and analyze."""
+    """Process a single ticket: parse, analyze, and refine action."""
     parsed = parse_zendesk_ticket(ticket)
     analysis = analyze_zendesk_alert(parsed)
 
     if analysis is None:
         analysis = {
             'impact_summary': 'Requires manual review',
-            'backbase_action_required': 'Review ticket for action items',
+            'backbase_action_required': 'Assessment Needed',
             'backbase_rationale': 'Vendor alert detected'
         }
+
+    # Refine action based on ticket content
+    refined_action = refine_action_required(
+        parsed['alert_type'],
+        parsed['description'],
+        parsed['subject'],
+        parsed['days_until_deadline']
+    )
 
     # Determine action priority based on urgency
     if parsed['urgency_badge'] == 'OVERDUE':
@@ -378,7 +430,7 @@ def process_ticket(ticket: Dict) -> Optional[Dict]:
         'urgency_badge': parsed['urgency_badge'],
         'action_priority': action_priority,
         'impact_summary': analysis.get('impact_summary', 'Requires review'),
-        'backbase_action_required': analysis.get('backbase_action_required', 'Review ticket'),
+        'backbase_action_required': refined_action,
         'backbase_rationale': analysis.get('backbase_rationale', 'Vendor alert detected'),
         'logged_at': datetime.now().isoformat()
     }

@@ -228,6 +228,38 @@ def parse_ai_json(raw_json):
     except (json.JSONDecodeError, ValueError) as e:
         raise RuntimeError(f"Failed to parse LLM response: {e}\nRaw content: {raw_json[:200]}")
 
+def refine_action_required(alert_type: str, description: str, title: str, days_until: str = None) -> str:
+    """Refine backbase_action_required based on ticket content and urgency.
+
+    Logic:
+    1. Breaking Change + migration keywords → Code Migration Required
+    2. Compliance/Security + assessment keywords → Assessment Needed
+    3. Deadline < 30 days → Code Migration Required (urgent)
+    4. Deadline 30-60 days → Assessment Needed
+    5. Default → Assessment Needed
+    """
+    text_combined = (description + " " + title).lower()
+
+    migration_keywords = ["update", "migrate", "migration", "upgrade", "change", "new version", "breaking", "deprecated", "removed"]
+    assessment_keywords = ["assess", "review", "check", "evaluate", "consider", "might", "may", "potential"]
+
+    has_migration = any(kw in text_combined for kw in migration_keywords)
+    has_assessment = any(kw in text_combined for kw in assessment_keywords)
+
+    # Rule 1: Breaking Change + migration keywords
+    if alert_type and "breaking" in alert_type.lower() and has_migration:
+        return "Code Migration Required"
+
+    # Rule 2: Compliance/Security + assessment keywords
+    if alert_type and ("compliance" in alert_type.lower() or "security" in alert_type.lower()) and has_assessment:
+        return "Assessment Needed"
+
+    # Rule 5: Breaking Change defaults to migration
+    if alert_type and "breaking" in alert_type.lower():
+        return "Code Migration Required"
+
+    return "Assessment Needed"
+
 def save_alerts_to_file(alerts):
     """Updates existing alerts, auto-resolves vanished SRE incidents, or appends new ones."""
     csv_filename = "watch_agent_alerts.csv"
@@ -274,6 +306,14 @@ def save_alerts_to_file(alerts):
         title = (alert.get('title') or 'N/A').strip()
         incoming_titles.add(title)
 
+        # Refine action based on alert content
+        refined_action = refine_action_required(
+            alert.get('type', ''),
+            alert.get('impact_summary', ''),
+            title,
+            alert.get('status_or_date')
+        )
+
         clean_alert = {
             "logged_at": timestamp,
             "vendor": VENDOR_NAME,
@@ -288,7 +328,7 @@ def save_alerts_to_file(alerts):
             "type": alert.get('type') or 'N/A',
             "status_or_date": alert.get('status_or_date') or 'N/A',
             "impact_summary": alert.get('impact_summary') or 'N/A',
-            "backbase_action_required": alert.get('backbase_action_required') or 'Assessment Needed',
+            "backbase_action_required": refined_action,
             "backbase_rationale": alert.get('backbase_rationale') or 'AI could not determine rationale.'
         }
 
