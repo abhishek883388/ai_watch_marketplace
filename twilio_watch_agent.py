@@ -200,96 +200,6 @@ def parse_ai_json(raw_json):
     except (json.JSONDecodeError, ValueError) as e:
         raise RuntimeError(f"Failed to parse LLM response: {e}\nRaw content: {raw_json[:200]}")
 
-def enrich_alerts_with_urgency(alerts):
-    """Add urgency_level and deadline_date fields to alerts based on status_or_date.
-
-    Args:
-        alerts: List of alert dictionaries from AI analysis
-
-    Returns:
-        List of enriched alerts with urgency information
-    """
-    for alert in alerts:
-        status_str = alert.get('status_or_date', '')
-        impact_str = alert.get('impact_summary', '')
-
-        # Try to extract deadline from status and impact summary
-        deadline_info = check_deadline_status(status_str)
-        impact_deadlines = extract_deadline_from_text(impact_str)
-
-        # If we found a deadline, use it
-        if deadline_info.get('deadline_date'):
-            alert['deadline_date'] = deadline_info['deadline_date']
-            alert['urgency_level'] = deadline_info['urgency_level']
-
-            # Update action_required based on urgency
-            if deadline_info['urgency_level'] == 'OVERDUE':
-                alert['backbase_action_required'] = 'OVERDUE - Action Required'
-            elif deadline_info['urgency_level'] == 'CRITICAL':
-                alert['backbase_action_required'] = 'CRITICAL - Immediate Action'
-
-            # Log urgent items
-            if deadline_info['urgency_level'] in ['OVERDUE', 'CRITICAL']:
-                print(f"⚠️  {deadline_info['urgency_level']} ITEM: {alert.get('title')} - {deadline_info['message']}")
-        elif impact_deadlines:
-            # Check first extracted deadline
-            first_deadline = impact_deadlines[0][1]
-            deadline_info = check_deadline_status(first_deadline)
-            if deadline_info.get('deadline_date'):
-                alert['deadline_date'] = deadline_info['deadline_date']
-                alert['urgency_level'] = deadline_info['urgency_level']
-        else:
-            alert['deadline_date'] = None
-            alert['urgency_level'] = 'NORMAL'
-
-    return alerts
-
-def escalate_alerts_by_age(existing_records):
-    """Check Architecture items and escalate urgency/action based on days since reported.
-
-    Status progression:
-    - 0-7 days: "New" (NORMAL urgency)
-    - 8-14 days: "Aging" (WARNING urgency)
-    - 15-30 days: "Pending" (CRITICAL urgency)
-    - 30+ days: "Overdue" (OVERDUE urgency, immediate action)
-    """
-    now = datetime.now()
-
-    for title, row in existing_records.items():
-        if row.get('category') == 'Architecture Deprecation':
-            try:
-                logged_at_str = row.get('logged_at', '')
-                logged_at = datetime.strptime(logged_at_str, "%Y-%m-%d %H:%M:%S")
-                days_elapsed = (now - logged_at).days
-                row['age_days'] = days_elapsed
-
-                # Set age status and escalate urgency/action
-                if days_elapsed <= 7:
-                    row['age_status'] = 'New'
-                    if row.get('urgency_level') == 'NORMAL':
-                        row['backbase_action_required'] = 'Assessment Needed'
-                elif days_elapsed <= 14:
-                    row['age_status'] = 'Aging'
-                    row['urgency_level'] = 'WARNING'
-                    row['backbase_action_required'] = 'Code Migration Required'
-                    print(f"⚠️  AGING (8-14 days): {title}")
-                elif days_elapsed <= 30:
-                    row['age_status'] = 'Pending'
-                    row['urgency_level'] = 'CRITICAL'
-                    row['backbase_action_required'] = 'CRITICAL - Immediate Action'
-                    print(f"⚠️  CRITICAL (15-30 days): {title}")
-                else:
-                    row['age_status'] = 'Overdue'
-                    row['urgency_level'] = 'OVERDUE'
-                    row['backbase_action_required'] = 'OVERDUE - Action Required'
-                    print(f"🚨 OVERDUE (30+ days): {title}")
-            except (ValueError, TypeError):
-                row['age_days'] = 'N/A'
-                row['age_status'] = 'Unknown'
-
-# ==========================================
-# 4. STORAGE (CSV WITH AUTO-RESOLUTION)
-# ==========================================
 def save_alerts_to_file(alerts):
     """Updates existing alerts, auto-resolves vanished SRE incidents, or appends new ones."""
     csv_filename = "watch_agent_alerts.csv"
@@ -327,9 +237,7 @@ def save_alerts_to_file(alerts):
                     existing_records[title] = row
                     record_order.append(title)
 
-    # Escalate Architecture items based on age since reported
-    escalate_alerts_by_age(existing_records)
-                
+    # Escalate Architecture items based on age since reported                
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     incoming_titles = set()
 
@@ -414,9 +322,7 @@ def main():
     all_alerts.extend(analyze_status(fetch_twilio_status()))
     all_alerts.extend(analyze_deprecations(fetch_twilio_changelog()))
 
-    # Enrich alerts with urgency/deadline information
-    all_alerts = enrich_alerts_with_urgency(all_alerts)
-
+    # Save alerts
     save_alerts_to_file(all_alerts)
     print("\n✅ Script execution complete. Exiting clean.")
 
