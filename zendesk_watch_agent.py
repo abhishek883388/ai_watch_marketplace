@@ -77,16 +77,13 @@ def get_zendesk_headers() -> Dict[str, str]:
 
 
 def fetch_zendesk_tickets() -> List[Dict]:
-    """Fetch tickets from Zendesk created/updated in the past 3 months using search API."""
+    """Fetch ALL tickets from Zendesk (no time filter) using search API."""
     if not all([ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN]):
         logger.error("Missing Zendesk credentials in .env file")
         return []
 
     base_url = f"https://{ZENDESK_SUBDOMAIN}.zendesk.com"
     headers = get_zendesk_headers()
-
-    # Calculate date 3 months ago
-    date_3_months_ago = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
 
     # First, get total ticket count
     total_count = 0
@@ -98,40 +95,34 @@ def fetch_zendesk_tickets() -> List[Dict]:
     except requests.exceptions.RequestException as e:
         logger.warning(f"Could not fetch total ticket count: {e}")
 
-    # Fetch tickets from past 3 months using search API
+    # Fetch ALL tickets using list endpoint (no date filter - capture complete marketplace history)
     all_tickets = []
-    search_url = urljoin(base_url, "/api/v2/search.json")
-
-    # Query for tickets created or updated in the past 3 months
-    query = f'created_at>={date_3_months_ago} OR updated_at>={date_3_months_ago}'
-    params = {
-        "query": query,
-        "per_page": 100
-    }
+    tickets_url = urljoin(base_url, "/api/v2/tickets.json")
 
     try:
         page = 1
-        while search_url:
-            logger.info(f"Fetching page {page} (3-month filter)...")
-            response = requests.get(search_url, headers=headers, params=params, timeout=30)
+        url = tickets_url
+        while url:
+            logger.info(f"Fetching page {page}...")
+            response = requests.get(url, headers=headers, params={"per_page": 100}, timeout=30)
             response.raise_for_status()
 
             data = response.json()
-            tickets = data.get('results', [])
+            tickets = data.get('tickets', [])
             if not tickets:
                 break
 
             all_tickets.extend(tickets)
 
             # Get next page URL
-            search_url = data.get('next_page')
+            url = data.get('next_page')
             page += 1
 
         queried_count = len(all_tickets)
         if total_count > 0:
-            logger.info(f"✅ Queried {queried_count} tickets (past 3 months) out of {total_count} total")
+            logger.info(f"✅ Queried {queried_count} tickets out of {total_count} total")
         else:
-            logger.info(f"✅ Queried {queried_count} tickets (past 3 months)")
+            logger.info(f"✅ Queried {queried_count} tickets")
 
         return all_tickets if all_tickets else []
 
@@ -154,7 +145,8 @@ def find_vendor_in_text(text: str) -> Optional[str]:
 
 
 def filter_vendor_alert_tickets(tickets: List[Dict]) -> Tuple[List[Dict], Dict]:
-    """Simple filter: include ticket if it mentions any monitored vendor by name.
+    """Filter: include ALL tickets that mention any monitored vendor by name.
+    Comprehensive marketplace tracking - captures all vendor-related issues regardless of type.
     Returns (filtered_tickets, stats)."""
     filtered = []
     vendor_counts = {}
