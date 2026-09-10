@@ -6,7 +6,11 @@ import csv
 import re
 from datetime import datetime
 from openai import OpenAI
+from dotenv import load_dotenv
 from deadline_checker import check_deadline_status, extract_deadline_from_text
+
+# Load environment variables
+load_dotenv()
 
 # ==========================================
 # 1. CONFIGURATION & CREDENTIALS
