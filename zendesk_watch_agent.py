@@ -16,7 +16,7 @@ import re
 
 import requests
 from dotenv import load_dotenv
-from groq import Groq
+from openai import OpenAI
 
 # Configure logging
 logging.basicConfig(
@@ -284,40 +284,49 @@ def parse_zendesk_ticket(ticket: Dict) -> Dict:
 
 
 def analyze_zendesk_alert(parsed_ticket: Dict) -> Optional[Dict]:
-    """Use Groq to analyze ticket content and determine impact."""
+    """Use Groq to analyze ticket and determine if Backbase action is needed."""
     if not GROQ_API_KEY:
         logger.warning("GROQ_API_KEY not found in .env, skipping AI analysis")
         return None
 
-    client = Groq()
+    client = OpenAI(
+        base_url="https://api.groq.com/openai/v1",
+        api_key=GROQ_API_KEY
+    )
 
-    prompt = f"""Analyze this Zendesk ticket and provide a JSON response with the following fields:
-- impact_summary: Brief summary of impact (max 100 chars)
-- backbase_action_required: What action Backbase should take (max 150 chars)
-- backbase_rationale: Why this action is important (max 150 chars)
+    prompt = f"""You are a Software Architect analyzing vendor marketplace alerts for Backbase.
+Read this vendor ticket and determine the action required.
 
-Ticket Info:
-Vendor: {parsed_ticket['vendor']}
-Subject: {parsed_ticket['subject']}
-Alert Type: {parsed_ticket['alert_type']}
-Deadline: {parsed_ticket['deadline_date']}
-Urgency: {parsed_ticket['urgency_badge']}
+VENDOR: {parsed_ticket['vendor']}
+SUBJECT: {parsed_ticket['subject']}
+TYPE: {parsed_ticket['alert_type']}
 
-Description:
+DESCRIPTION:
 {parsed_ticket['description'][:1000]}
 
-Response must be valid JSON only, no markdown."""
+Respond with ONLY valid JSON (no markdown):
+{{
+  "impact_summary": "1 sentence impact on Backbase (max 100 chars)",
+  "backbase_action_required": "Code Migration Required, Assessment Needed, or No Action",
+  "backbase_rationale": "Why we do or don't need to act (max 150 chars)"
+}}
+
+Decision logic:
+- "Code Migration Required": Breaking change, API sunset, deprecated endpoint - MUST update code
+- "Assessment Needed": May affect us, need to evaluate impact and compatibility
+- "No Action": Informational only, no impact to Backbase systems"""
 
     try:
-        message = client.messages.create(
+        response = client.chat.completions.create(
             model="mixtral-8x7b-32768",
-            max_tokens=500,
+            max_tokens=300,
             messages=[
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            response_format={"type": "json_object"}
         )
 
-        response_text = message.content[0].text.strip()
+        response_text = response.choices[0].message.content.strip()
 
         # Parse JSON response
         try:
