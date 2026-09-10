@@ -326,7 +326,31 @@ def analyze_deprecations(changelog_text):
         raise
     except Exception as e:
         print(f"⚠️ [ARCH AI Error] Failed to analyze deprecations (check GROQ_API_KEY and network)")
-        return []
+        # Fallback: extract basic alerts from raw changelog text if Groq fails
+        print(f"   Generating fallback alerts from {len(changelog_text.split('EXACT_TITLE:'))-1} articles...")
+        fallback_alerts = []
+        for entry in changelog_text.split('EXACT_TITLE:')[1:]:  # Skip first split (before first EXACT_TITLE)
+            lines = entry.strip().split('\n')
+            if lines:
+                title = lines[0].strip()
+                incident_url = ""
+                for line in lines:
+                    if line.startswith('Link:'):
+                        incident_url = line.replace('Link:', '').strip()
+                        break
+
+                fallback_alerts.append({
+                    "category": "Architecture Deprecation",
+                    "title": title,
+                    "type": "Security Update",
+                    "product_impacted": "Payment API",
+                    "status_or_date": "None Specified",
+                    "impact_summary": "Entrust SDK or certificate update requiring evaluation",
+                    "backbase_action_required": "Assessment Needed",
+                    "backbase_rationale": "Requires evaluation of Entrust payment processing impact",
+                    "incident_url": incident_url
+                })
+        return fallback_alerts
 
 def parse_ai_json(raw_json):
     """Safely extracts the alerts array from LLM JSON response."""
