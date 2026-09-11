@@ -24,19 +24,15 @@ client = OpenAI(
 
 VENDOR_NAME = "Yodlee"
 
+# Backbase uses Yodlee for:
+# 1. Account Verification
+# 2. Transaction Enrichment
 TARGET_SERVICES = [
-    "data aggregation",
+    "account verification",
+    "transaction enrichment",
     "account aggregation",
-    "enrichment",
-    "authentication",
-    "api",
-    "fastlink",
     "verification",
-    "kyc",
-    "data",
-    "kyc verification",
-    "user onboarding",
-    "account verification"
+    "enrichment"
 ]
 
 # ==========================================
@@ -46,7 +42,7 @@ def fetch_yodlee_status():
     """[SRE] Fetches active incidents from Yodlee's status page.
 
     Yodlee uses Statuspage.io for status tracking.
-    Official page: https://status.yodlee.com/
+    Official page: https://yodlee.statuspage.io/
     Uses JSON API to fetch unresolved incidents only.
     """
     print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates...")
@@ -55,7 +51,7 @@ def fetch_yodlee_status():
 
     try:
         # Use Statuspage.io JSON API to fetch incidents
-        api_url = "https://status.yodlee.com/api/v2/incidents.json"
+        api_url = "https://yodlee.statuspage.io/api/v2/incidents.json"
         req = urllib.request.Request(api_url)
 
         with urllib.request.urlopen(req, timeout=5) as response:
@@ -119,9 +115,8 @@ def fetch_yodlee_changelog():
 
     # PRIMARY: Try to fetch from GitHub releases
     github_feeds = [
-        ("Yodlee SDK Android", "https://api.github.com/repos/Yodlee/yodlee-core-android-sdk/releases"),
-        ("Yodlee SDK Python", "https://api.github.com/repos/Yodlee/yodlee-python-sdk/releases"),
-        ("Yodlee SDK Java", "https://api.github.com/repos/Yodlee/yodlee-java-sdk/releases"),
+        ("Yodlee OpenAPI", "https://api.github.com/repos/Yodlee/OpenAPI/releases"),
+        ("Yodlee FastLink", "https://api.github.com/repos/Yodlee/fastlink/releases"),
     ]
 
     for platform, api_url in github_feeds:
@@ -159,10 +154,9 @@ def fetch_yodlee_changelog():
         except Exception:
             continue
 
-    # FALLBACK: Try RSS feeds from documentation
+    # FALLBACK: Try RSS feeds from documentation (if available)
     rss_feeds = [
         ("Yodlee Blog", "https://yodlee.com/feed/"),
-        ("Yodlee Updates", "https://developer.yodlee.com/feed/"),
     ]
 
     for platform, feed_url in rss_feeds:
