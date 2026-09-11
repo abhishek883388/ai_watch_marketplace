@@ -3,7 +3,7 @@ import urllib.request
 import json
 import os
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from openai import OpenAI
 from dotenv import load_dotenv
 from deadline_checker import check_deadline_status, extract_deadline_from_text
@@ -238,6 +238,27 @@ def parse_ai_json(raw_json):
     except (json.JSONDecodeError, ValueError) as e:
         raise RuntimeError(f"Failed to parse LLM response: {e}\nRaw content: {raw_json[:200]}")
 
+def get_default_deadline(alert_type: str) -> str:
+    """Calculate default deadline based on alert type when none provided."""
+    today = datetime.now()
+    if "breaking" in alert_type.lower() or "security" in alert_type.lower():
+        deadline = today + timedelta(days=14)
+    elif "deprecat" in alert_type.lower():
+        deadline = today + timedelta(days=30)
+    else:
+        deadline = today + timedelta(days=30)
+    return deadline.strftime("%Y-%m-%d")
+
+def extract_or_default_deadline(alert_type: str, changelog_entry: str) -> str:
+    """Extract deadline from changelog or apply default based on type."""
+    extracted_dates = extract_deadline_from_text(changelog_entry)
+    if extracted_dates:
+        date_label, date_str = extracted_dates[0]
+        result = check_deadline_status(date_str)
+        if result.get("deadline_date"):
+            return result["deadline_date"]
+    return get_default_deadline(alert_type)
+
 def refine_action_required(alert_type: str, description: str, title: str) -> str:
     """Refine backbase_action_required based on alert content."""
     text_combined = (description + " " + title).lower()
@@ -301,12 +322,29 @@ def save_alerts_to_file(alerts):
             title
         )
 
+        # Extract or default deadline for Architecture Deprecations
+        deadline_date = alert.get('deadline_date') or 'N/A'
+        if alert.get('category') == 'Architecture Deprecation':
+            status_or_date = alert.get('status_or_date') or ''
+            if status_or_date and status_or_date != 'None Specified':
+                extracted_deadline = extract_or_default_deadline(
+                    alert.get('type', ''),
+                    status_or_date
+                )
+            else:
+                extracted_deadline = get_default_deadline(alert.get('type', ''))
+            deadline_date = extracted_deadline
+
+            deadline_check = check_deadline_status(deadline_date)
+            if deadline_check.get('urgency_level') != 'NORMAL':
+                refined_action = deadline_check.get('message', refined_action)
+
         clean_alert = {
             "logged_at": timestamp,
             "vendor": VENDOR_NAME,
             "category": alert.get('category') or 'SRE Incident',
             "urgency_level": alert.get('urgency_level') or 'NORMAL',
-            "deadline_date": alert.get('deadline_date') or 'N/A',
+            "deadline_date": deadline_date,
             "title": title,
             "incident_url": alert.get('incident_url') or '',
             "product_impacted": alert.get('product_impacted') or 'Unspecified',

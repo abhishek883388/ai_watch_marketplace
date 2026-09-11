@@ -3,7 +3,7 @@ import urllib.request
 import json
 import os
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from openai import OpenAI
 from dotenv import load_dotenv
 from deadline_checker import check_deadline_status, extract_deadline_from_text
@@ -228,6 +228,49 @@ def parse_ai_json(raw_json):
     except (json.JSONDecodeError, ValueError) as e:
         raise RuntimeError(f"Failed to parse LLM response: {e}\nRaw content: {raw_json[:200]}")
 
+def get_default_deadline(alert_type: str) -> str:
+    """Calculate default deadline based on alert type when none provided.
+
+    Args:
+        alert_type: Type of alert (Deprecation, Breaking Change, Security Update)
+
+    Returns:
+        Deadline date in YYYY-MM-DD format
+    """
+    today = datetime.now()
+
+    if "breaking" in alert_type.lower() or "security" in alert_type.lower():
+        deadline = today + timedelta(days=14)  # CRITICAL - 2 weeks
+    elif "deprecat" in alert_type.lower():
+        deadline = today + timedelta(days=30)  # WARNING - 1 month
+    else:
+        deadline = today + timedelta(days=30)  # Default - 1 month
+
+    return deadline.strftime("%Y-%m-%d")
+
+def extract_or_default_deadline(alert_type: str, changelog_entry: str) -> str:
+    """Extract deadline from changelog or apply default based on type.
+
+    Args:
+        alert_type: Type of alert
+        changelog_entry: Full changelog entry text
+
+    Returns:
+        Deadline date in YYYY-MM-DD format
+    """
+    # Try to extract deadline from changelog text
+    extracted_dates = extract_deadline_from_text(changelog_entry)
+    if extracted_dates:
+        # Use the first extracted deadline
+        date_label, date_str = extracted_dates[0]
+        # Verify it's a valid date
+        result = check_deadline_status(date_str)
+        if result.get("deadline_date"):
+            return result["deadline_date"]
+
+    # No explicit deadline found - apply default
+    return get_default_deadline(alert_type)
+
 def refine_action_required(alert_type: str, description: str, title: str, days_until: str = None) -> str:
     """Refine backbase_action_required based on ticket content and urgency.
 
@@ -314,6 +357,26 @@ def save_alerts_to_file(alerts):
             alert.get('status_or_date')
         )
 
+        # Extract or default deadline for Architecture Deprecations
+        deadline_date = alert.get('deadline_date') or 'N/A'
+        if alert.get('category') == 'Architecture Deprecation':
+            # Try to extract deadline from status_or_date field
+            status_or_date = alert.get('status_or_date') or ''
+            if status_or_date and status_or_date != 'None Specified':
+                extracted_deadline = extract_or_default_deadline(
+                    alert.get('type', ''),
+                    status_or_date
+                )
+            else:
+                # Apply default deadline based on alert type
+                extracted_deadline = get_default_deadline(alert.get('type', ''))
+            deadline_date = extracted_deadline
+
+            # Update urgency based on deadline
+            deadline_check = check_deadline_status(deadline_date)
+            if deadline_check.get('urgency_level') != 'NORMAL':
+                refined_action = deadline_check.get('message', refined_action)
+
         clean_alert = {
             "logged_at": timestamp,
             "vendor": VENDOR_NAME,
@@ -321,7 +384,7 @@ def save_alerts_to_file(alerts):
             "urgency_level": alert.get('urgency_level') or 'NORMAL',
             "age_status": 'New',
             "age_days": '0',
-            "deadline_date": alert.get('deadline_date') or 'N/A',
+            "deadline_date": deadline_date,
             "title": title,
             "incident_url": alert.get('incident_url') or '',
             "product_impacted": alert.get('product_impacted') or 'Unspecified',
