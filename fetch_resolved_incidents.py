@@ -110,6 +110,9 @@ def fetch_twilio_resolved():
         if incident.get("incident_updates"):
             impact_summary = incident['incident_updates'][0].get('body', 'N/A')[:200]
 
+        # Extract incident URL
+        incident_url = incident.get('shortlink', '') or incident.get('url', '')
+
         incidents.append({
             "vendor": "Twilio",
             "title": incident_name,
@@ -119,7 +122,8 @@ def fetch_twilio_resolved():
             "duration_hours": duration_hours,
             "status": incident.get('status', ''),
             "impact_summary": impact_summary,
-            "incident_type": "Outage"
+            "incident_type": "Outage",
+            "incident_url": incident_url
         })
 
     print(f"✅ Found {len(incidents)} resolved Twilio incidents")
@@ -162,6 +166,9 @@ def fetch_jumio_resolved():
         if not any(service in search_text for service in target_services):
             continue
 
+        # Extract incident URL from RSS entry
+        incident_url = entry.get('link', '')
+
         incidents.append({
             "vendor": "Jumio",
             "title": title,
@@ -171,7 +178,8 @@ def fetch_jumio_resolved():
             "duration_hours": "N/A",
             "status": "Resolved",
             "impact_summary": summary[:200],
-            "incident_type": "Incident"
+            "incident_type": "Incident",
+            "incident_url": incident_url
         })
 
     print(f"✅ Found {len(incidents)} resolved Jumio incidents")
@@ -236,6 +244,9 @@ def fetch_entrust_resolved():
         if incident.get("incident_updates"):
             impact_summary = incident['incident_updates'][0].get('body', 'N/A')[:200]
 
+        # Extract incident URL
+        incident_url = incident.get('shortlink', '') or incident.get('url', '')
+
         incidents.append({
             "vendor": "Entrust",
             "title": title,
@@ -245,7 +256,8 @@ def fetch_entrust_resolved():
             "duration_hours": duration_hours,
             "status": status,
             "impact_summary": impact_summary,
-            "incident_type": "Incident"
+            "incident_type": "Incident",
+            "incident_url": incident_url
         })
 
     print(f"✅ Found {len(incidents)} resolved Entrust incidents")
@@ -266,7 +278,8 @@ def save_resolved_incidents(all_incidents):
         "duration_hours",
         "status",
         "impact_summary",
-        "incident_type"
+        "incident_type",
+        "incident_url"
     ]
 
     if not all_incidents:
