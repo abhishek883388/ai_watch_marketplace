@@ -39,15 +39,16 @@ TARGET_SERVICES = [
 # 2. DATA FETCHERS
 # ==========================================
 def fetch_yodlee_status():
-    """[SRE] Fetches active incidents from Yodlee's status page.
+    """[SRE] Fetches active and resolved incidents from Yodlee's status page.
 
     Yodlee uses Statuspage.io for status tracking.
     Official page: https://yodlee.statuspage.io/
-    Uses JSON API to fetch unresolved incidents only.
+    Uses JSON API to fetch both unresolved and recently resolved incidents.
     """
     print(f"📡 [SRE] Fetching live {VENDOR_NAME} status updates...")
 
     entries_text = ""
+    resolved_entries_text = ""
 
     try:
         # Use Statuspage.io JSON API to fetch incidents
@@ -59,43 +60,52 @@ def fetch_yodlee_status():
 
         incidents = data.get("incidents", [])
 
-        # Filter for unresolved incidents matching our services
+        # Process all incidents matching our services
         for incident in incidents:
             incident_name = incident.get('name', '').strip()
             status = incident.get('status', '').lower()
-
-            # Only include unresolved incidents
-            if status in ['resolved', 'completed', 'postmortem']:
-                continue
 
             components = incident.get('components', [])
             affected_names = [c.get('name', '').lower() for c in components]
             search_text = (incident_name.lower() + " " + " ".join(affected_names))
 
             if any(service in search_text for service in TARGET_SERVICES):
-                print(f"🎯 [SRE Match]: {incident_name}")
                 name_clean = incident_name.replace('"', '\\"').replace('\\', '\\\\')
                 status_clean = status.replace('"', '\\"').replace('\\', '\\\\')
-                entries_text += f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
 
                 incident_url = incident.get('shortlink', '') or incident.get('url', '')
-                if incident_url:
-                    url_clean = incident_url.replace('"', '\\"').replace('\\', '\\\\')
-                    entries_text += f"Link: {url_clean}\n"
+                url_clean = incident_url.replace('"', '\\"').replace('\\', '\\\\') if incident_url else ''
 
+                summary = ''
                 if incident.get("incident_updates"):
-                    update_body = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
-                    entries_text += f"Summary: {update_body}\n"
+                    summary = str(incident['incident_updates'][0].get('body', '')).replace('"', '\\"').replace('\\', '\\\\')
 
-                entries_text += "\n"
+                entry_text = f"EXACT_TITLE: {name_clean}\nStatus: {status_clean}\n"
+                if url_clean:
+                    entry_text += f"Link: {url_clean}\n"
+                if summary:
+                    entry_text += f"Summary: {summary}\n"
+                entry_text += "\n"
+
+                # Separate resolved and unresolved incidents
+                if status in ['resolved', 'completed', 'postmortem']:
+                    print(f"✓ [SRE Resolved]: {incident_name}")
+                    resolved_entries_text += entry_text
+                else:
+                    print(f"🎯 [SRE Match]: {incident_name}")
+                    entries_text += entry_text
 
     except Exception as e:
         print(f"⚠️ [SRE API Error] Failed to fetch {VENDOR_NAME} status (check network): {type(e).__name__}")
 
-    if not entries_text:
-        print(f"ℹ️ No unresolved {VENDOR_NAME} incidents matching monitored services")
+    if not entries_text and not resolved_entries_text:
+        print(f"ℹ️ No {VENDOR_NAME} incidents matching monitored services")
+    elif not entries_text:
+        print(f"ℹ️ No active {VENDOR_NAME} incidents matching monitored services")
 
-    return entries_text
+    # Combine both active and resolved incidents
+    # Resolved incidents will be processed separately by the analyzer
+    return entries_text + resolved_entries_text
 
 def fetch_yodlee_changelog():
     """[ARCH] Fetches SDK updates and API changes from Yodlee.
@@ -197,20 +207,22 @@ def fetch_yodlee_changelog():
 # 3. AI ANALYZERS (Groq / GPT-OSS-20B)
 # ==========================================
 def analyze_status(status_text):
-    """Parses SRE live incidents with Backbase financial data context."""
+    """Parses SRE live and resolved incidents with Backbase financial data context."""
     if not status_text:
         return []
-    print(f"🧠 [SRE AI] Analyzing active {VENDOR_NAME} outages...")
+    print(f"🧠 [SRE AI] Analyzing {VENDOR_NAME} incidents (active and resolved)...")
     prompt = f"""
     You are a Site Reliability Engineer for Backbase (digital banking platform).
-    Read the {VENDOR_NAME} incident entries for data aggregation and enrichment services.
+    Read the {VENDOR_NAME} incident entries for Account Verification and Transaction Enrichment services.
+    Entries may include both active and resolved incidents.
 
     CRITICAL RULE: You MUST copy the EXACT string from "EXACT_TITLE:" into the "title" field. Do not alter capitalization, wording, or spelling.
     CRITICAL RULE: If a "Link:" is present in the entry, extract it and include as "incident_url".
+    CRITICAL RULE: If the "Status:" field indicates "resolved", "completed", or "postmortem", set status_or_date to "Resolved".
 
     Focus on:
-    1. How does this incident impact Backbase's data aggregation and enrichment services?
-    2. Does this affect user account verification or KYC processes?
+    1. How does this incident impact Backbase's Account Verification and Transaction Enrichment services?
+    2. Does this affect user data retrieval or account verification processes?
     3. Are authentication or data retrieval APIs affected?
     4. Is there a security or data integrity risk?
 
@@ -221,8 +233,8 @@ def analyze_status(status_text):
           "category": "SRE Incident",
           "title": "EXACT title string from input",
           "type": "Outage, Degraded Performance, or Delays",
-          "product_impacted": "Data Aggregation, Enrichment, or Authentication",
-          "status_or_date": "Investigating, Identified, or Monitoring",
+          "product_impacted": "Account Verification, Transaction Enrichment, or Data API",
+          "status_or_date": "Investigating, Identified, Monitoring, or Resolved",
           "impact_summary": "1 sentence summary of how data services are impacted",
           "backbase_action_required": "Immediate Action, Monitor, or No Action",
           "backbase_rationale": "1 sentence on data integrity/security implications",
@@ -230,7 +242,7 @@ def analyze_status(status_text):
         }}
       ]
     }}
-    If no active issues exist, return {{"alerts": []}}. Entries:\n{status_text}
+    If no issues exist, return {{"alerts": []}}. Entries:\n{status_text}
     """
     try:
         response = client.chat.completions.create(
