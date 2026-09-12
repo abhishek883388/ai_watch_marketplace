@@ -438,8 +438,10 @@ def save_alerts_to_file(alerts):
             for row in reader:
                 title = row.get('title')
                 if title:
+                    # Only add to record_order if it's a new title (dedup)
+                    if title not in existing_records:
+                        record_order.append(title)
                     existing_records[title] = row
-                    record_order.append(title)
 
     # Escalate Architecture items based on age since reported
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
