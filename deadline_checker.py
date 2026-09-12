@@ -124,6 +124,7 @@ def extract_deadline_from_text(text):
         (r'eol[:\s]*([^,\n]+)', "EOL"),
         (r'updated?\s+to[:\s]*([^,\n]+)', "Updated to"),
         (r'(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4})', "Date Found"),
+        (r'((?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4})', "Date Found"),
         (r'(\d{4}-\d{2}-\d{2})', "Date Found"),
     ]
 

@@ -166,6 +166,46 @@ def fetch_entrust_changelog():
 
     return entries_text
 
+def fetch_article_content(article_url):
+    """Fetches full content of a Freshdesk article.
+
+    Extracts the main article body text which contains dates, deadlines, and impact details.
+    Returns the article body text or empty string if fetch fails.
+    """
+    try:
+        req = urllib.request.Request(
+            article_url,
+            headers={'User-Agent': 'Mozilla/5.0'}
+        )
+        with urllib.request.urlopen(req, timeout=8) as response:
+            html = response.read().decode('utf-8', errors='ignore')
+
+        # Extract article body from Freshdesk HTML structure
+        # Freshdesk uses <div class="article-body"> or <div class="sln-article-content"> for article content
+        body_patterns = [
+            r'<div[^>]*class="[^"]*article-body[^"]*"[^>]*>(.*?)</div>',
+            r'<div[^>]*class="[^"]*sln-article-content[^"]*"[^>]*>(.*?)</div>',
+            r'<article[^>]*>(.*?)</article>',
+            r'<div[^>]*id="article-content"[^>]*>(.*?)</div>',
+        ]
+
+        for pattern in body_patterns:
+            matches = re.findall(pattern, html, re.DOTALL | re.IGNORECASE)
+            if matches:
+                # Clean HTML tags and decode entities
+                body_text = matches[0]
+                body_text = re.sub(r'<[^>]+>', ' ', body_text)  # Remove HTML tags
+                body_text = re.sub(r'\s+', ' ', body_text)  # Normalize whitespace
+                body_text = body_text.strip()
+
+                # Return only meaningful content (ignore if too short)
+                if len(body_text) > 50:
+                    return body_text[:2000]  # Limit to 2000 chars to stay within token budget
+
+        return ""
+    except Exception:
+        return ""
+
 def fetch_antelop_articles():
     """[ARCH] Scrapes Antelop support portal (Entrust) for deprecations and important FAQs.
 
@@ -174,6 +214,8 @@ def fetch_antelop_articles():
     - TLS/SSL certificate changes and renewals
     - Breaking changes and deprecations
     - Important FAQs and security notices
+
+    Now fetches full article content for better deadline extraction.
     """
     print(f"📡 [ARCH] Scraping Antelop support portal for {VENDOR_NAME} deprecations...")
 
@@ -215,9 +257,17 @@ def fetch_antelop_articles():
                 print(f"   🎯 [{article_id}] {article_title[:70]}")
 
                 title_clean = article_title.replace('"', '\\"').replace('\\', '\\\\')
-                url_clean = f"https://antelop-support.freshdesk.com/en/support/solutions/articles/{article_id}-{slug}".replace('"', '\\"')
+                article_url = f"https://antelop-support.freshdesk.com/en/support/solutions/articles/{article_id}-{slug}"
+                url_clean = article_url.replace('"', '\\"')
 
-                entries_text += f"EXACT_TITLE: {title_clean}\nArticle ID: {article_id}\nLink: {url_clean}\n\n"
+                # Fetch full article content
+                article_body = fetch_article_content(article_url)
+                body_clean = article_body.replace('"', '\\"').replace('\\', '\\\\')
+
+                entries_text += f"EXACT_TITLE: {title_clean}\nArticle ID: {article_id}\nLink: {url_clean}\n"
+                if body_clean:
+                    entries_text += f"Content: {body_clean}\n"
+                entries_text += "\n"
 
     except urllib.error.URLError as e:
         print(f"   ⚠️ Failed to reach Antelop portal: {type(e).__name__}")
