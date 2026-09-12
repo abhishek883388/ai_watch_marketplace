@@ -374,8 +374,9 @@ def save_alerts_to_file(alerts):
 
             # Update urgency based on deadline
             deadline_check = check_deadline_status(deadline_date)
-            if deadline_check.get('urgency_level') != 'NORMAL':
-                refined_action = deadline_check.get('message', refined_action)
+            urgency = deadline_check.get('urgency_level', 'NORMAL')
+            if urgency != 'NORMAL':
+                refined_action = urgency
 
         clean_alert = {
             "logged_at": timestamp,
