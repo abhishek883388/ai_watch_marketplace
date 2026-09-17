@@ -4,7 +4,8 @@ on:
   schedule:
     # Runs every 15 minutes
     - cron: '*/15 * * * *'
-  
+  repository_dispatch:
+    types: [run-watchdog] # Custom event type
   # Enables manual "Run workflow" button in GitHub Actions tab
   workflow_dispatch: 
 
