@@ -1,13 +1,9 @@
 name: AI Watch Agent Cron Job
 
 on:
-  schedule:
-    # Runs every 15 minutes
-    - cron: '*/15 * * * *'
   repository_dispatch:
-    types: [run-watchdog] # Custom event type
-  # Enables manual "Run workflow" button in GitHub Actions tab
-  workflow_dispatch: 
+    types: [run-watchdog] # Triggered via external ping (cron-job.org)
+  workflow_dispatch: # Allows manual trigger from UI
 
 jobs:
   run-watchdog:
@@ -20,7 +16,7 @@ jobs:
     
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
         
@@ -40,7 +36,6 @@ jobs:
           python jumio_watch_agent.py
           python entrust_watch_agent.py
           python yodlee_watch_agent.py
-      
 
       - name: Install Zendesk dependencies
         run: |
