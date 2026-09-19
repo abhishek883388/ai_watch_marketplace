@@ -60,7 +60,7 @@ MONITORED_VENDORS = [
 OUTPUT_FILE = "zendesk_watch_agent_alerts.csv"
 CSV_COLUMNS = [
     "vendor", "product", "title", "type", "priority", "status",
-    "ticket_id", "ticket_url", "created_at", "resolved_at", "assignee_name", "deadline_date",
+    "ticket_id", "ticket_url", "created_at", "solved_at", "assignee_name", "deadline_date",
     "days_until_deadline", "urgency_badge", "action_priority",
     "impact_summary", "backbase_action_required", "backbase_rationale", "logged_at"
 ]
@@ -258,7 +258,7 @@ def parse_zendesk_ticket(ticket: Dict) -> Dict:
     description = ticket.get('description', '')
     created_at = ticket.get('created_at', '')
     updated_at = ticket.get('updated_at', '')
-    resolved_at = ticket.get('resolved_at', '')
+    solved_at = ticket.get('solved_at', '')
     priority = ticket.get('priority', 'normal')
     status = ticket.get('status', 'open')
     tags = ticket.get('tags', [])
@@ -303,7 +303,7 @@ def parse_zendesk_ticket(ticket: Dict) -> Dict:
         'description': description,
         'created_at': created_at,
         'updated_at': updated_at,
-        'resolved_at': resolved_at,
+        'solved_at': solved_at,
         'assignee_name': assignee_name,
         'priority': priority,
         'status': status,
@@ -460,7 +460,7 @@ def process_ticket(ticket: Dict) -> Optional[Dict]:
         'ticket_id': parsed['ticket_id'],
         'ticket_url': parsed['ticket_url'],
         'created_at': parsed['created_at'],
-        'resolved_at': parsed['resolved_at'] or 'Not resolved',
+        'solved_at': parsed['solved_at'] or 'Not solved',
         'assignee_name': parsed['assignee_name'] or 'Unassigned',
         'deadline_date': parsed['deadline_date'] or 'Not specified',
         'days_until_deadline': parsed['days_until_deadline'],
