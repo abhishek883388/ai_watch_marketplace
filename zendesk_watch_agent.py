@@ -35,6 +35,8 @@ ZENDESK_API_TOKEN = os.getenv('ZENDESK_API_TOKEN')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 # Monitored vendor names - simple list for keyword matching
+ZENDESK_USER_CACHE = {}
+
 MONITORED_VENDORS = [
     "twilio", "sendgrid",
     "entrust", "onfido",
@@ -74,6 +76,30 @@ def get_zendesk_headers() -> Dict[str, str]:
         'Authorization': f'Basic {auth_b64}',
         'Content-Type': 'application/json'
     }
+
+
+def get_assignee_name(assignee_id: int) -> str:
+    """Fetch assignee name from Zendesk users API with caching."""
+    if not assignee_id:
+        return ''
+
+    if assignee_id in ZENDESK_USER_CACHE:
+        return ZENDESK_USER_CACHE[assignee_id]
+
+    try:
+        base_url = f"https://{ZENDESK_SUBDOMAIN}.zendesk.com"
+        url = urljoin(base_url, f"/api/v2/users/{assignee_id}.json")
+        response = requests.get(url, headers=get_zendesk_headers(), timeout=10)
+        response.raise_for_status()
+
+        user = response.json().get('user', {})
+        name = user.get('name', '')
+        ZENDESK_USER_CACHE[assignee_id] = name
+        return name
+    except Exception as e:
+        logger.warning(f"Could not fetch assignee name for ID {assignee_id}: {e}")
+        ZENDESK_USER_CACHE[assignee_id] = ''
+        return ''
 
 
 def fetch_zendesk_tickets() -> List[Dict]:
@@ -237,12 +263,11 @@ def parse_zendesk_ticket(ticket: Dict) -> Dict:
     status = ticket.get('status', 'open')
     tags = ticket.get('tags', [])
 
-    # Extract assignee name (from assignee object or assignee_id)
+    # Extract assignee name using API lookup
     assignee_name = ''
-    if ticket.get('assignee'):
-        assignee_name = ticket['assignee'].get('name', '')
-    if not assignee_name and ticket.get('assignee_id'):
-        assignee_name = f"ID: {ticket['assignee_id']}"
+    assignee_id = ticket.get('assignee_id')
+    if assignee_id:
+        assignee_name = get_assignee_name(assignee_id)
 
     vendor = ticket.get('detected_vendor', 'unknown')
 
