@@ -60,7 +60,7 @@ MONITORED_VENDORS = [
 OUTPUT_FILE = "zendesk_watch_agent_alerts.csv"
 CSV_COLUMNS = [
     "vendor", "product", "title", "type", "priority", "status",
-    "ticket_id", "ticket_url", "created_at", "solved_at", "assignee_name", "deadline_date",
+    "ticket_id", "ticket_url", "created_at", "updated_at", "resolution_days", "assignee_name", "deadline_date",
     "days_until_deadline", "urgency_badge", "action_priority",
     "impact_summary", "backbase_action_required", "backbase_rationale", "logged_at"
 ]
@@ -258,10 +258,19 @@ def parse_zendesk_ticket(ticket: Dict) -> Dict:
     description = ticket.get('description', '')
     created_at = ticket.get('created_at', '')
     updated_at = ticket.get('updated_at', '')
-    solved_at = ticket.get('solved_at', '')
     priority = ticket.get('priority', 'normal')
     status = ticket.get('status', 'open')
     tags = ticket.get('tags', [])
+
+    # Calculate resolution time (days to resolve for closed/solved tickets)
+    resolution_days = None
+    if status in ['solved', 'closed'] and created_at and updated_at:
+        try:
+            created = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+            updated = datetime.fromisoformat(updated_at.replace('Z', '+00:00'))
+            resolution_days = (updated - created).days
+        except:
+            resolution_days = None
 
     # Extract assignee name using API lookup
     assignee_name = ''
@@ -303,7 +312,7 @@ def parse_zendesk_ticket(ticket: Dict) -> Dict:
         'description': description,
         'created_at': created_at,
         'updated_at': updated_at,
-        'solved_at': solved_at,
+        'resolution_days': resolution_days,
         'assignee_name': assignee_name,
         'priority': priority,
         'status': status,
@@ -460,7 +469,8 @@ def process_ticket(ticket: Dict) -> Optional[Dict]:
         'ticket_id': parsed['ticket_id'],
         'ticket_url': parsed['ticket_url'],
         'created_at': parsed['created_at'],
-        'solved_at': parsed['solved_at'] or 'Not solved',
+        'updated_at': parsed['updated_at'],
+        'resolution_days': parsed['resolution_days'] or '',
         'assignee_name': parsed['assignee_name'] or 'Unassigned',
         'deadline_date': parsed['deadline_date'] or 'Not specified',
         'days_until_deadline': parsed['days_until_deadline'],
