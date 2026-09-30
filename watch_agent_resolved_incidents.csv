@@ -29,5 +29,4 @@ Account Management
 Authy > Verify
 Programmable Messaging > SMS
 P",Outage,https://stspg.io/nqjkxwngpxc3
-Twilio,SMS Delivery Delays and Failures from a Subset of Twilio Alphanumeric Sender IDs and Long Codes to Tigo and Orange Democratic Republic of the Congo,"SMS, Middle East & Africa",2026-09-18 12:14:14,2026-09-20 10:26:01,46.2,resolved,The incident has been resolved and SMS delivery from a subset of Twilio Alphanumeric Sender IDs and Long Codes to Tigo and Orange network subscribers in Democratic Republic of the Congo is operating n,Outage,https://stspg.io/3qgzgrl4328d
 Entrust,Possible service degradation: Mobile SDK and CMS Module - Performance may be impacted,none,2026-08-05 08:23:01,2026-08-05 14:25:16,6.04,resolved,A RCA will be provided later.,Incident,https://stspg.io/3qydn6lz7j3y
